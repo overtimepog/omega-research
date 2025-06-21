@@ -6,6 +6,13 @@
 
 </div>
 
+## TODO:
+
+- Train a Reward Model (Done)
+- Run the system iteratively to get new algorithm (Need to find some problems)
+- Compare with AlphaEvolve
+
+
 ## EvolveAgent
 
 We use [OpenEvolve](https://github.com/codelion/openevolve) as our evolutionary agent.
