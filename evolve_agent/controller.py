@@ -17,6 +17,7 @@ from evolve_agent.database import Program, ProgramDatabase
 from evolve_agent.evaluator import Evaluator
 from evolve_agent.llm.ensemble import LLMEnsemble
 from evolve_agent.prompt.sampler import PromptSampler
+from evolve_agent.reward_model import RewardModel
 from evolve_agent.utils.code_utils import (
     apply_diff,
     extract_code_language,
@@ -31,7 +32,6 @@ from evolve_agent.utils.format_utils import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 def _format_metrics(metrics: Dict[str, Any]) -> str:
     """Safely format metrics, handling both numeric and string values"""
@@ -78,6 +78,7 @@ class EvolveAgent:
     def __init__(
         self,
         initial_program_path: str,
+        initial_proposal_path: str,
         evaluation_file: str,
         config_path: Optional[str] = None,
         config: Optional[Config] = None,
@@ -114,6 +115,9 @@ class EvolveAgent:
         self.initial_program_code = self._load_initial_program()
         self.language = extract_code_language(self.initial_program_code)
 
+        self.initial_proposal_path = initial_proposal_path
+        self.initial_proposal = self._load_initial_proposal()
+
         # Extract file extension from initial program
         self.file_extension = os.path.splitext(initial_program_path)[1]
         if not self.file_extension:
@@ -127,6 +131,7 @@ class EvolveAgent:
         # Initialize components
         self.llm_ensemble = LLMEnsemble(self.config.llm.models)
         self.llm_evaluator_ensemble = LLMEnsemble(self.config.llm.evaluator_models)
+        self.reward_model = RewardModel(self.config.rewardmodel)
 
         self.prompt_sampler = PromptSampler(self.config.prompt)
         self.evaluator_prompt_sampler = PromptSampler(self.config.prompt)
@@ -172,10 +177,176 @@ class EvolveAgent:
 
         logger.info(f"Logging to {log_file}")
 
+    async def _generate_new_proposal(
+        self,
+        parent_proposal: List[str],
+        parent_program: str,
+        parent_metrics: Dict[str, Any],
+        inspirations: List[Program],
+        evolution_round: int,
+    ) -> List[str]:
+        """
+        Generate a new research proposal based on parent proposal, program, and metrics
+        
+        Args:
+            parent_proposal: The parent program's proposal
+            parent_program: The parent program's code
+            parent_metrics: The parent program's metrics
+            inspirations: List of inspiration programs
+            evolution_round: Current evolution round
+            
+        Returns:
+            List of strings representing the new proposal
+        """
+        # Build a prompt for proposal generation
+        proposal_prompt = self._build_proposal_prompt(
+            parent_proposal=parent_proposal,
+            parent_program=parent_program,
+            parent_metrics=parent_metrics,
+            inspirations=inspirations,
+            evolution_round=evolution_round,
+        )
+        
+        # Generate new proposal using LLM
+        try:
+            proposal_response = await self.llm_ensemble.generate_with_context(
+                system_message=proposal_prompt["system"],
+                messages=[{"role": "user", "content": proposal_prompt["user"]}],
+            )
+            
+            # Parse the proposal response
+            new_proposal = self._parse_proposal_response(proposal_response)
+            
+            logger.info(f"Generated new proposal for evolution round {evolution_round}")
+            return new_proposal
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate new proposal: {e}")
+            # Fallback to parent proposal with some modification
+            return self._modify_parent_proposal(parent_proposal, parent_metrics)
+
+    def _build_proposal_prompt(
+        self,
+        parent_proposal: List[str],
+        parent_program: str,
+        parent_metrics: Dict[str, Any],
+        inspirations: List[Program],
+        evolution_round: int,
+    ) -> Dict[str, str]:
+        """
+        Build a prompt for generating a new research proposal
+        
+        Args:
+            parent_proposal: The parent program's proposal
+            parent_program: The parent program's code
+            parent_metrics: The parent program's metrics
+            inspirations: List of inspiration programs
+            evolution_round: Current evolution round
+            
+        Returns:
+            Dictionary with 'system' and 'user' keys
+        """
+        # Format parent proposal
+        parent_proposal_str = "\n".join(parent_proposal) if parent_proposal else ""
+        
+        # Format metrics
+        metrics_str = _format_metrics(parent_metrics)
+        
+        # Format inspirations
+        inspirations_str = ""
+        if inspirations:
+            inspirations_str = "\n".join([
+                f"Program {i+1}:\nProposal: {' '.join(prog.proposal if prog.proposal else [])}\nMetrics: {_format_metrics(prog.metrics)}"
+                for i, prog in enumerate(inspirations[:3])
+            ])
+        
+        system_message = """You are a research advisor tasked with evolving and improving research proposals. 
+Your goal is to generate a new research proposal that builds upon the current proposal while addressing its limitations and incorporating insights from successful approaches.
+
+Focus on:
+1. Identifying weaknesses in the current approach based on performance metrics
+2. Proposing novel improvements that could enhance performance
+3. Learning from successful inspirations while maintaining originality
+4. Ensuring the new proposal is technically sound and implementable"""
+
+        user_message = f"""Based on the following information, generate an improved research proposal:
+
+CURRENT PROPOSAL:
+{parent_proposal_str}
+
+CURRENT IMPLEMENTATION METRICS:
+{metrics_str}
+
+INSPIRATION FROM SUCCESSFUL APPROACHES:
+{inspirations_str}
+
+
+Please generate a new research proposal that:
+1. Addresses the limitations shown in the current metrics
+2. Incorporates insights from successful approaches
+3. Proposes specific technical improvements
+4. Maintains clarity and technical rigor
+
+Return the proposal as a clear, concise research abstract."""
+
+        return {
+            "system": system_message,
+            "user": user_message
+        }
+
+    def _parse_proposal_response(self, response: str) -> List[str]:
+        """
+        Parse the LLM response to extract the new proposal
+        
+        Args:
+            response: Raw LLM response
+            
+        Returns:
+            List of strings representing the proposal
+        """
+        # Clean up the response
+        proposal_text = response.strip()
+        
+        # Remove any markdown formatting
+        proposal_text = re.sub(r'^```.*?\n', '', proposal_text, flags=re.MULTILINE)
+        proposal_text = re.sub(r'\n```$', '', proposal_text, flags=re.MULTILINE)
+           
+        return [proposal_text]
+
+    def _modify_parent_proposal(self, parent_proposal: List[str], parent_metrics: Dict[str, Any]) -> List[str]:
+        """
+        Fallback method to modify parent proposal when generation fails
+        
+        Args:
+            parent_proposal: The parent proposal
+            parent_metrics: The parent metrics
+            
+        Returns:
+            Modified proposal
+        """
+        if not parent_proposal:
+            return ["Enhanced research approach with improved methodology and performance optimization."]
+        
+        # Simple modification by adding improvement context
+        modified_proposal = []
+        for part in parent_proposal:
+            modified_part = part
+            if "improvement" not in part.lower():
+                modified_part += " This approach has been enhanced based on performance analysis and optimization insights."
+            modified_proposal.append(modified_part)
+        
+        return modified_proposal
+
     def _load_initial_program(self) -> str:
         """Load the initial program from file"""
         with open(self.initial_program_path, "r") as f:
             return f.read()
+
+    def _load_initial_proposal(self) -> List[str]:
+        """Load the initial proposal from file"""
+        with open(self.initial_proposal_path, "r") as f:
+            proposal = f.read()
+            return [proposal]
 
     async def run(
         self,
@@ -205,6 +376,7 @@ class EvolveAgent:
             and not any(
                 p.code == self.initial_program_code for p in self.database.programs.values()
             )
+            and self.initial_proposal
         )
 
         if should_add_initial:
@@ -216,11 +388,15 @@ class EvolveAgent:
                 self.initial_program_code, initial_program_id
             )
 
+            initial_idea_reward = await self.reward_model.score_research_proposal(self.initial_proposal)
+
             initial_program = Program(
                 id=initial_program_id,
                 code=self.initial_program_code,
                 language=self.language,
                 metrics=initial_metrics,
+                proposal=self.initial_proposal,
+                idea_reward=initial_idea_reward,
                 iteration_found=start_iteration,
             )
 
@@ -263,10 +439,32 @@ class EvolveAgent:
             # Get artifacts for the parent program if available
             parent_artifacts = self.database.get_artifacts(parent.id)
 
-            # Build prompt
+            # Step 1: Generate new proposal using parent's proposal, program, and metrics
+            new_proposal = await self._generate_new_proposal(
+                parent_proposal=parent.proposal,
+                parent_program=parent.code,
+                parent_metrics=parent.metrics,
+                inspirations=inspirations,
+                evolution_round=i
+            )
+            
+            # Step 2: Score the new proposal using RewardModel
+            new_proposal_results = await self.reward_model.score_research_proposal(new_proposal)
+            new_proposal_score = new_proposal_results[0].get('score', -1.0)
+
+            # Step 3: Check if proposal score meets threshold
+            if new_proposal_score < self.config.rewardmodel.proposal_score_threshold:
+                logger.info(f"Iteration {i+1}: Proposal score {new_proposal_score:.4f} below threshold "
+                           f"{self.config.rewardmodel.proposal_score_threshold:.4f}, skipping program generation")
+                continue
+            
+            logger.info(f"Iteration {i+1}: Proposal score: {new_proposal_score:.4f} / 10")
+            
+
+            # Step 4: Build prompt for program generation using all information
             prompt = self.prompt_sampler.build_prompt(
                 current_program=parent.code,
-                parent_program=parent.code,  # We don't have the parent's code, use the same
+                parent_program=parent.code,
                 program_metrics=parent.metrics,
                 previous_programs=[p.to_dict() for p in self.database.get_top_programs(3)],
                 top_programs=[p.to_dict() for p in inspirations],
@@ -274,6 +472,9 @@ class EvolveAgent:
                 evolution_round=i,
                 allow_full_rewrite=self.config.allow_full_rewrites,
                 program_artifacts=parent_artifacts if parent_artifacts else None,
+                current_proposal=new_proposal,
+                parent_proposal=parent.proposal,
+                proposal_score=new_proposal_score,
             )
 
             # Generate code modification
@@ -320,7 +521,7 @@ class EvolveAgent:
                 # Handle artifacts if they exist
                 artifacts = self.evaluator.get_pending_artifacts(child_id)
 
-                # Create a child program
+                # Create a child program with the new proposal
                 child_program = Program(
                     id=child_id,
                     code=child_code,
@@ -328,6 +529,8 @@ class EvolveAgent:
                     parent_id=parent.id,
                     generation=parent.generation + 1,
                     metrics=child_metrics,
+                    proposal=new_proposal,
+                    idea_reward=new_proposal_score,
                     metadata={
                         "changes": changes_summary,
                         "parent_metrics": parent.metrics,
@@ -586,3 +789,18 @@ class EvolveAgent:
             )
 
         logger.info(f"Saved best program to {code_path} with program info to {info_path}")
+
+if __name__=='__main__':
+    # Initialize the system
+    evolve_agent = EvolveAgent(
+        initial_program_path="/data/zhuotaodeng/yzj/alpha-research/results/initial_program.py",
+        evaluation_file="/data/zhuotaodeng/yzj/alpha-research/results/evaluator.py",
+        config_path="/data/zhuotaodeng/yzj/alpha-research/configs/default_config.yaml"
+    )
+
+    print(evolve_agent)
+    # # Run the evolution
+    # best_program = await evolve.run(iterations=1000)
+    # print(f"Best program metrics:")
+    # for name, value in best_program.metrics.items():
+    #     print(f"  {name}: {value:.4f}")

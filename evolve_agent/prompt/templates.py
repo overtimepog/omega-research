@@ -61,6 +61,62 @@ Be thoughtful about your changes and explain your reasoning thoroughly.
 IMPORTANT: Do not rewrite the entire program - focus on targeted improvements.
 """
 
+
+DIFF_USER_TEMPLATE_PROPOSAL = """# Previous Proposal: 
+{parent_proposal_text}
+
+# Previous Program:
+```{language}
+{parent_program}
+```
+
+# Previous Performance Metrics: 
+{metrics}
+
+# Areas Identified for Improvement: 
+{improvement_areas}
+
+{artifacts}
+
+# Program Evolution History
+{evolution_history}
+
+# Current Proposal
+{current_proposal_text}
+
+# Task
+Suggest improvements to the program that will lead to better performance on the specified metrics.
+
+You MUST use the exact SEARCH/REPLACE diff format shown below to indicate changes:
+
+<<<<<<< SEARCH
+# Original code to find and replace (must match exactly)
+=======
+# New replacement code
+>>>>>>> REPLACE
+
+Example of valid diff format:
+<<<<<<< SEARCH
+for i in range(m):
+    for j in range(p):
+        for k in range(n):
+            C[i, j] += A[i, k] * B[k, j]
+=======
+# Reorder loops for better memory access pattern
+for i in range(m):
+    for k in range(n):
+        for j in range(p):
+            C[i, j] += A[i, k] * B[k, j]
+>>>>>>> REPLACE
+
+You can suggest multiple changes. Each SEARCH section must exactly match code in the current program.
+Be thoughtful about your changes and explain your reasoning thoroughly.
+
+IMPORTANT: Do not rewrite the entire program - focus on targeted improvements.
+"""
+
+
+
 # User message template for full rewrite
 FULL_REWRITE_USER_TEMPLATE = """# Current Program Information
 - Current performance metrics: {metrics}
@@ -135,16 +191,18 @@ Return your evaluation as a JSON object with the following format:
 }}
 """
 
+
 # Default templates dictionary
 DEFAULT_TEMPLATES = {
     "system_message": BASE_SYSTEM_TEMPLATE,
     "evaluator_system_message": BASE_EVALUATOR_SYSTEM_TEMPLATE,
-    "diff_user": DIFF_USER_TEMPLATE,
+    # "diff_user": DIFF_USER_TEMPLATE,
     "full_rewrite_user": FULL_REWRITE_USER_TEMPLATE,
     "evolution_history": EVOLUTION_HISTORY_TEMPLATE,
     "previous_attempt": PREVIOUS_ATTEMPT_TEMPLATE,
     "top_program": TOP_PROGRAM_TEMPLATE,
     "evaluation": EVALUATION_TEMPLATE,
+    "diff_user": DIFF_USER_TEMPLATE_PROPOSAL
 }
 
 

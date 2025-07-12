@@ -46,6 +46,10 @@ class Program:
     code: str
     language: str = "python"
 
+    # Proposal
+    proposal: List[str] = None
+    idea_reward: List[dict] = None
+
     # Evolution information
     parent_id: Optional[str] = None
     generation: int = 0
@@ -65,6 +69,7 @@ class Program:
     # Artifact storage
     artifacts_json: Optional[str] = None  # JSON-serialized small artifacts
     artifact_dir: Optional[str] = None  # Path to large artifact files
+
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""

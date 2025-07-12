@@ -64,11 +64,11 @@ def load_from_pt(save_path: str) -> SupervisedDataset:
 
     save_dir = pathlib.Path(save_path)
 
-    # 加载 input_ids 和 labels
+    # Load input_ids and labels
     input_ids = torch.load(save_dir / "input_ids.pt")
     labels = torch.load(save_dir / "labels.pt")
 
-    # 创建一个空的 SupervisedDataset 实例
+    # Create an empty SupervisedDataset instance
     dataset = SupervisedDataset.__new__(SupervisedDataset)
     dataset.input_ids = input_ids
     dataset.labels = labels

@@ -8,12 +8,12 @@ import time
 from typing import Any, Dict, List, Optional, Union
 
 import openai
+from openai import AsyncOpenAI
 
 from evolve_agent.config import LLMConfig
 from evolve_agent.llm.base import LLMInterface
 
 logger = logging.getLogger(__name__)
-
 
 class OpenAILLM(LLMInterface):
     """LLM interface using OpenAI-compatible APIs"""
@@ -33,8 +33,8 @@ class OpenAILLM(LLMInterface):
         self.api_base = model_cfg.api_base
         self.api_key = model_cfg.api_key
 
-        # Set up API client
-        self.client = openai.OpenAI(
+        # Set up async API client
+        self.client = AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.api_base,
         )
@@ -102,13 +102,13 @@ class OpenAILLM(LLMInterface):
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
         """Make the actual API call"""
-        # Use asyncio to run the blocking API call in a thread pool
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, lambda: self.client.chat.completions.create(**params)
-        )
+        # Use native async API call
+        response = await self.client.chat.completions.create(**params)
         # Logging of system prompt, user message and response content
-        logger = logging.getLogger(__name__)
-        logger.debug(f"API parameters: {params}")
-        logger.debug(f"API response: {response.choices[0].message.content}")
+        prompt = params["messages"][0]["content"] + '\n' + params["messages"][1]["content"]
+        logger.info('=' * 100)
+        logger.info(f"API parameters: {prompt}")
+        logger.info('=' * 100)
+        logger.info(f"API response: {response.choices[0].message.content}")
+        logger.info('=' * 100)
         return response.choices[0].message.content

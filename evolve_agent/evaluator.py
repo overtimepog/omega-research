@@ -330,13 +330,13 @@ class Evaluator:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
+            print(module)
             # Check if cascade functions exist
             if not hasattr(module, "evaluate_stage1"):
                 return await self._direct_evaluate(program_path)
 
             # Run first stage with timeout
             try:
-
                 async def run_stage1():
                     loop = asyncio.get_event_loop()
                     return await loop.run_in_executor(None, module.evaluate_stage1, program_path)

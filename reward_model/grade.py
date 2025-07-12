@@ -66,7 +66,7 @@ def main():
 
     try:
         data = load_dataset('json', data_files='/data/zhuotaodeng/yzj/alpha-research/data/iclr2025_eval_100.json', split='train')
-        data = [dict(item) for item in data]  # 转换为List[Dict]
+        data = [dict(item) for item in data]  # Convert to List[Dict]
     except Exception as e:
         print(f"Error loading dataset: {e}")
         return

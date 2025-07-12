@@ -107,6 +107,27 @@ class LLMConfig(LLMModelConfig):
                 if overwrite or getattr(model, key, None) is None:
                     setattr(model, key, value)
 
+@dataclass
+class RewardModelConfig:
+    """Configuration for reward model"""
+
+    model_type: str = "vllm"
+    model_name: str = None
+
+    # Generation parameters
+    temperature: float = 0.7
+    top_p: float = 0.95
+    max_tokens: int = 4096
+    
+    # Threshold for generating programs
+    proposal_score_threshold: float = 5.5  # Only generate programs if proposal score >= threshold
+
+    # Request parameters of API models
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    jsonl_file: str = "results.jsonl",
+    max_retries: int = 50,
+    retry_delay: int = 5
 
 @dataclass
 class PromptConfig:
@@ -219,6 +240,7 @@ class Config:
     prompt: PromptConfig = field(default_factory=PromptConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
+    rewardmodel: RewardModelConfig = field(default_factory=RewardModelConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -259,6 +281,8 @@ class Config:
             config.database = DatabaseConfig(**config_dict["database"])
         if "evaluator" in config_dict:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
+        if "rewardmodel" in config_dict:
+            config.rewardmodel = RewardModelConfig(**config_dict["rewardmodel"])
 
         return config
 
@@ -326,6 +350,19 @@ class Config:
                 # "distributed": self.evaluator.distributed,
                 "use_llm_feedback": self.evaluator.use_llm_feedback,
                 "llm_feedback_weight": self.evaluator.llm_feedback_weight,
+            },
+            "rewardmodel": {
+                "model_type": self.rewardmodel.model_type,
+                "model": self.rewardmodel.model,
+                "temperature": self.rewardmodel.temperature,
+                "top_p": self.rewardmodel.top_p,
+                "max_tokens": self.rewardmodel.max_tokens,
+                "proposal_score_threshold": self.rewardmodel.proposal_score_threshold,
+                "api_key": self.rewardmodel.api_key,
+                "base_url": self.rewardmodel.base_url,
+                "jsonl_file": self.rewardmodel.jsonl_file,
+                "max_retries": self.rewardmodel.max_retries,
+                "retry_delay": self.rewardmodel.retry_delay,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,

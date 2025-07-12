@@ -54,7 +54,7 @@ class PromptSampler:
         language: str = "python",
         evolution_round: int = 0,
         allow_full_rewrite: bool = False,
-        template_key: Optional[str] = None,
+        template_key: Optional[str] = "diff_user",
         program_artifacts: Optional[Dict[str, Union[str, bytes]]] = None,
         **kwargs: Any,
     ) -> Dict[str, str]:
@@ -118,18 +118,25 @@ class PromptSampler:
         if self.config.include_artifacts and program_artifacts:
             artifacts_section = self._render_artifacts(program_artifacts)
 
+        # Format proposal information
+        current_proposal_str = self._format_proposal(kwargs.get('current_proposal', []))
+        parent_proposal_str = self._format_proposal(kwargs.get('parent_proposal', []))
+        proposal_score_str = f"{kwargs.get('proposal_score', -1.0)}"
+
         # Apply stochastic template variations if enabled
         if self.config.use_template_stochasticity:
             user_template = self._apply_template_variations(user_template)
 
         # Format the final user message
         user_message = user_template.format(
+            parent_proposal_text=parent_proposal_str,
+            language=language,
+            parent_program=parent_program,
             metrics=metrics_str,
             improvement_areas=improvement_areas,
-            evolution_history=evolution_history,
-            current_program=current_program,
-            language=language,
             artifacts=artifacts_section,
+            evolution_history=evolution_history,
+            current_proposal_text=current_proposal_str,
             **kwargs,
         )
 
@@ -492,3 +499,50 @@ class PromptSampler:
             filtered = re.sub(pattern, replacement, filtered, flags=re.IGNORECASE)
 
         return filtered
+
+    def _format_proposal(self, proposal: List[str]) -> str:
+        """
+        Format proposal for prompt inclusion
+        
+        Args:
+            proposal: List of proposal strings
+            
+        Returns:
+            Formatted string for prompt inclusion
+        """
+        if not proposal:
+            return ""
+        
+        # Join proposal parts with newlines
+        proposal_text = "\n".join(proposal)
+        
+        # Truncate if too long
+        if len(proposal_text) > 2000:
+            proposal_text = proposal_text[:2000] + "...(truncated)"
+        
+        return proposal_text
+
+    def _format_proposal_score(self, proposal_scores: List[dict]) -> str:
+        """
+        Format proposal scores for prompt inclusion
+        
+        Args:
+            proposal_scores: List of dictionaries containing proposal scores
+            
+        Returns:
+            Formatted string for prompt inclusion
+        """
+        if not proposal_scores:
+            return ""
+        
+        # Extract scores from the score dictionaries
+        scores = []
+        for score_dict in proposal_scores:
+            if isinstance(score_dict, dict) and 'score' in score_dict:
+                scores.append(str(score_dict['score']))
+            elif isinstance(score_dict, (int, float)):
+                scores.append(f"{score_dict:.2f}")
+            else:
+                scores.append(str(score_dict))
+        
+        return ", ".join(scores)
