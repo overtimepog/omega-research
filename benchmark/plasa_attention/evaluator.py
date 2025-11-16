@@ -28,6 +28,10 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
 from typing import Dict, List
 import pickle
+
+# Add path to evolve_agent for metric normalization utilities
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from evolve_agent.utils.metrics_utils import normalize_metric
 from pathlib import Path
 from datasets import load_dataset
 from tqdm import tqdm
@@ -300,8 +304,31 @@ def evaluate(program_path: str = "initial_program.py") -> Dict:
         print(f"  Val Perplexity: {val_metrics['perplexity']:.2f}")
 
         # Score: 1 / perplexity (higher is better)
+        # Cap extreme perplexity values before computing score
         perplexity = min(val_metrics['perplexity'], 10000)
         score = 1.0 / perplexity if perplexity > 0 else 0.0
+
+        # Combined score: weighted combination of normalized metrics (higher is better)
+        # Based on 2025 NAS best practices: normalize all components to [0,1] with
+        # proper direction handling (minimize/maximize) before weighted combination
+        #
+        # Normalization approach:
+        # - perplexity: log-transform + min-max to [0,1], then invert (lower perp = higher score)
+        # - accuracy: already in [0,1], use directly
+        # - val_loss: min-max to [0,1], then invert (lower loss = higher score)
+        #
+        # Weights: perplexity (60%), accuracy (30%), val_loss (10%)
+
+        # Normalize each component using metric-aware normalization
+        norm_perplexity = normalize_metric(val_metrics['perplexity'], 'perplexity')
+        norm_accuracy = normalize_metric(val_metrics['accuracy'], 'accuracy')
+        norm_val_loss = normalize_metric(val_metrics['loss'], 'val_loss')
+
+        combined_score = (
+            0.6 * norm_perplexity +  # Normalized & inverted: lower perplexity = higher score
+            0.3 * norm_accuracy +     # Normalized: higher accuracy = higher score
+            0.1 * norm_val_loss       # Normalized & inverted: lower val_loss = higher score
+        )
 
         return {
             "score": float(score),
@@ -309,6 +336,7 @@ def evaluate(program_path: str = "initial_program.py") -> Dict:
             "accuracy": float(val_metrics['accuracy']),
             "train_loss": float(train_loss),
             "val_loss": float(val_metrics['loss']),
+            "combined_score": float(combined_score),
         }
 
     except Exception as e:

@@ -271,22 +271,18 @@ class ProgramDatabase:
             )
             if sorted_programs:
                 logger.debug(f"Found best program by metric '{metric}': {sorted_programs[0].id}")
-        elif self.programs and all("combined_score" in p.metrics for p in self.programs.values()):
-            # Sort by combined_score if it exists (preferred method)
-            sorted_programs = sorted(
-                self.programs.values(), key=lambda p: p.metrics["combined_score"], reverse=True
-            )
-            if sorted_programs:
-                logger.debug(f"Found best program by combined_score: {sorted_programs[0].id}")
         else:
-            # Sort by average of all numeric metrics as fallback
+            # Sort by combined_score (preferred), or normalized average as fallback
+            # Prioritize combined_score when available for individual programs
             sorted_programs = sorted(
                 self.programs.values(),
-                key=lambda p: safe_numeric_average(p.metrics),
+                key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True)),
                 reverse=True,
             )
             if sorted_programs:
-                logger.debug(f"Found best program by average metrics: {sorted_programs[0].id}")
+                has_combined = "combined_score" in sorted_programs[0].metrics
+                score_type = "combined_score" if has_combined else "normalized average"
+                logger.debug(f"Found best program by {score_type}: {sorted_programs[0].id}")
 
         # Update the best program tracking if we found a better program
         if sorted_programs and (
@@ -333,10 +329,10 @@ class ProgramDatabase:
                 reverse=True,
             )
         else:
-            # Sort by average of all numeric metrics
+            # Sort by combined_score (preferred), or normalized average as fallback
             sorted_programs = sorted(
                 self.programs.values(),
-                key=lambda p: safe_numeric_average(p.metrics),
+                key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True)),
                 reverse=True,
             )
 
@@ -594,12 +590,12 @@ class ProgramDatabase:
                     )
                 coords.append(bin_idx)
             elif dim == "score":
-                # Use average of numeric metrics
+                # Use combined_score (preferred) or normalized average of metrics
                 if not program.metrics:
                     bin_idx = 0
                 else:
-                    avg_score = safe_numeric_average(program.metrics)
-                    bin_idx = min(int(avg_score * self.feature_bins), self.feature_bins - 1)
+                    score = program.metrics.get("combined_score", safe_numeric_average(program.metrics, auto_normalize=True))
+                    bin_idx = min(int(score * self.feature_bins), self.feature_bins - 1)
                 coords.append(bin_idx)
             elif dim in program.metrics:
                 # Use specific metric
@@ -649,9 +645,22 @@ class ProgramDatabase:
         if "combined_score" in program1.metrics and "combined_score" in program2.metrics:
             return program1.metrics["combined_score"] > program2.metrics["combined_score"]
 
-        # Fallback to average of all numeric metrics
-        avg1 = safe_numeric_average(program1.metrics)
-        avg2 = safe_numeric_average(program2.metrics)
+        # Use 'score' metric if available (score = 1/perplexity, higher is better)
+        if "score" in program1.metrics and "score" in program2.metrics:
+            return program1.metrics["score"] > program2.metrics["score"]
+
+        # Check for error metrics - programs without errors are always better
+        has_error1 = "error" in program1.metrics and program1.metrics.get("error", 0) < 0
+        has_error2 = "error" in program2.metrics and program2.metrics.get("error", 0) < 0
+
+        if has_error1 and not has_error2:
+            return False  # program2 is better (no error)
+        if has_error2 and not has_error1:
+            return True  # program1 is better (no error)
+
+        # Fallback to normalized average of all metrics (handles different directions properly)
+        avg1 = safe_numeric_average(program1.metrics, auto_normalize=True)
+        avg2 = safe_numeric_average(program2.metrics, auto_normalize=True)
 
         return avg1 > avg2
 
@@ -690,7 +699,7 @@ class ProgramDatabase:
         # Find worst program among valid programs
         if valid_archive_programs:
             worst_program = min(
-                valid_archive_programs, key=lambda p: safe_numeric_average(p.metrics)
+                valid_archive_programs, key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True))
             )
 
             # Replace if new program is better
@@ -988,10 +997,10 @@ class ProgramDatabase:
         # Get programs sorted by fitness (worst first)
         all_programs = list(self.programs.values())
 
-        # Sort by average metric (worst first)
+        # Sort by combined_score or normalized average (worst first)
         sorted_programs = sorted(
             all_programs,
-            key=lambda p: safe_numeric_average(p.metrics),
+            key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True)),
         )
 
         # Remove worst programs, but never remove the best program
@@ -1084,9 +1093,9 @@ class ProgramDatabase:
             if not island_programs:
                 continue
 
-            # Sort by fitness (using combined_score or average metrics)
+            # Sort by fitness (using combined_score or normalized average metrics)
             island_programs.sort(
-                key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics)),
+                key=lambda p: p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True)),
                 reverse=True,
             )
 
@@ -1131,7 +1140,7 @@ class ProgramDatabase:
 
             if island_programs:
                 scores = [
-                    p.metrics.get("combined_score", safe_numeric_average(p.metrics))
+                    p.metrics.get("combined_score", safe_numeric_average(p.metrics, auto_normalize=True))
                     for p in island_programs
                 ]
 
