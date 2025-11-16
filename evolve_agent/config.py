@@ -3,11 +3,51 @@ Configuration handling for EvolveAgent
 """
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
+from dotenv import load_dotenv
+
+
+def _expand_env_vars(data: Any, env_loaded: bool = False) -> Any:
+    """
+    Recursively expand environment variables in configuration data.
+    Supports ${VAR_NAME} syntax in strings.
+
+    Args:
+        data: Configuration data (dict, list, str, or other)
+        env_loaded: Whether .env file has been loaded (internal flag)
+
+    Returns:
+        Data with environment variables expanded
+    """
+    # Load .env file once at the start
+    if not env_loaded:
+        # Try to find .env file in current directory or parent directories
+        current_dir = Path.cwd()
+        env_file = current_dir / '.env'
+        if env_file.exists():
+            load_dotenv(env_file)
+        env_loaded = True
+
+    if isinstance(data, dict):
+        return {key: _expand_env_vars(value, env_loaded=True) for key, value in data.items()}
+    elif isinstance(data, list):
+        return [_expand_env_vars(item, env_loaded=True) for item in data]
+    elif isinstance(data, str):
+        # Replace ${VAR_NAME} with environment variable value
+        def replace_env_var(match):
+            var_name = match.group(1)
+            return os.environ.get(var_name, match.group(0))
+
+        # Pattern matches ${VAR_NAME}
+        pattern = r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}'
+        return re.sub(pattern, replace_env_var, data)
+    else:
+        return data
 
 
 @dataclass
@@ -233,6 +273,7 @@ class Config:
     checkpoint_interval: int = 100
     log_level: str = "INFO"
     log_dir: Optional[str] = None
+    best_solution_dir: Optional[str] = None  # Directory to save best solution
     random_seed: Optional[int] = None
 
     # Component configurations
@@ -257,12 +298,15 @@ class Config:
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "Config":
         """Create configuration from a dictionary"""
+        # Expand environment variables in the config dict
+        config_dict = _expand_env_vars(config_dict)
+
         # Handle nested configurations
         config = Config()
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "rewardmodel"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -294,6 +338,7 @@ class Config:
             "checkpoint_interval": self.checkpoint_interval,
             "log_level": self.log_level,
             "log_dir": self.log_dir,
+            "best_solution_dir": self.best_solution_dir,
             "random_seed": self.random_seed,
             # Component configurations
             "llm": {
