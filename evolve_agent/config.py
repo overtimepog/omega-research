@@ -163,10 +163,10 @@ class RewardModelConfig:
     proposal_score_threshold: float = 5.5  # Only generate programs if proposal score >= threshold
 
     # Request parameters of API models
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
-    jsonl_file: str = "results.jsonl",
-    max_retries: int = 50,
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    jsonl_file: str = "results.jsonl"
+    max_retries: int = 50
     retry_delay: int = 5
 
 @dataclass
@@ -398,7 +398,7 @@ class Config:
             },
             "rewardmodel": {
                 "model_type": self.rewardmodel.model_type,
-                "model": self.rewardmodel.model,
+                "model_name": self.rewardmodel.model_name,
                 "temperature": self.rewardmodel.temperature,
                 "top_p": self.rewardmodel.top_p,
                 "max_tokens": self.rewardmodel.max_tokens,
