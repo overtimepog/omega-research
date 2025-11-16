@@ -110,11 +110,11 @@ class OpenAILLM(LLMInterface):
         """Make the actual API call"""
         # Use native async API call
         response = await self.client.chat.completions.create(**params)
-        # Logging of system prompt, user message and response content
+        # Logging of system prompt, user message and response content (DEBUG level for file logs only)
         prompt = params["messages"][0]["content"] + '\n' + params["messages"][1]["content"]
-        logger.info('=' * 100)
-        logger.info(f"API parameters: {prompt}")
-        logger.info('=' * 100)
-        logger.info(f"API response: {response.choices[0].message.content}")
-        logger.info('=' * 100)
+        logger.debug('=' * 100)
+        logger.debug(f"API parameters: {prompt}")
+        logger.debug('=' * 100)
+        logger.debug(f"API response: {response.choices[0].message.content}")
+        logger.debug('=' * 100)
         return response.choices[0].message.content

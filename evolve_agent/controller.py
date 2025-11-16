@@ -154,28 +154,33 @@ class EvolveAgent:
         logger.info(f"Initialized EvolveAgent with {initial_program_path} " f"and {evaluation_file}")
 
     def _setup_logging(self) -> None:
-        """Set up logging"""
+        """Set up logging with detailed file logs and clean console output"""
         log_dir = self.config.log_dir or os.path.join(self.output_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
 
-        # Set up root logger
+        # Set up root logger at DEBUG to capture everything
         root_logger = logging.getLogger()
-        root_logger.setLevel(getattr(logging, self.config.log_level))
+        root_logger.setLevel(logging.DEBUG)
 
-        # Add file handler
+        # File handler - captures ALL details (DEBUG and above)
         log_file = os.path.join(log_dir, f"evolve_agent_{time.strftime('%Y%m%d_%H%M%S')}.log")
         file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)  # Capture everything in file
         file_handler.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
         root_logger.addHandler(file_handler)
 
-        # Add console handler
+        # Console handler - show INFO and above, but API details are at DEBUG
+        # This shows progress without verbose prompts and code dumps
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        console_handler.setLevel(logging.INFO)  # Show INFO, WARNING, ERROR on console
+        console_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
         root_logger.addHandler(console_handler)
 
-        logger.info(f"Logging to {log_file}")
+        logger.info(f"Logging to {log_file} (file: DEBUG, console: INFO)")
 
     async def _generate_new_proposal(
         self,
