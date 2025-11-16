@@ -52,11 +52,38 @@ Scoring Guidelines:
 - Scores 7-8: Good quality, solid contribution
 - Scores 9-10: Excellent, exceptional contribution
 
-After your evaluation, provide your final score in this exact format: \\boxed{{X.X}}
+You MUST respond with valid JSON in this exact format:
+{{
+  "score": <integer 1-10>,
+  "explanation": "<your detailed evaluation reasoning>"
+}}
 
 Research Proposal:
 {proposal}
 """
+
+    # JSON schema for structured score output (2025 best practice)
+    SCORE_JSON_SCHEMA = {
+        "name": "research_proposal_score",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer",
+                    "description": "Numerical score from 1 to 10",
+                    "minimum": 1,
+                    "maximum": 10
+                },
+                "explanation": {
+                    "type": "string",
+                    "description": "Detailed reasoning for the score"
+                }
+            },
+            "required": ["score", "explanation"],
+            "additionalProperties": False
+        },
+        "strict": True
+    }
 
     def __init__(self, config: RewardModelConfig):
         """
@@ -88,27 +115,68 @@ Research Proposal:
         logger.info(f"Initialized RewardModel with OpenRouter API: {self.config.base_url}")
         logger.info(f"Model: {self.config.model_name}, Temperature: {self.config.temperature}")
 
+    def parse_score_from_json(self, text: str) -> tuple[float, str]:
+        """
+        Parse score from JSON structured output (2025 best practice).
+
+        Attempts to parse the response as JSON with 'score' and 'explanation' fields.
+        This is the primary parsing method, with regex as fallback.
+
+        Args:
+            text (str): Model output containing JSON.
+
+        Returns:
+            tuple[float, str]: (score, explanation) where score is -1.0 if parsing fails.
+        """
+        try:
+            # Try to parse as JSON
+            data = json.loads(text.strip())
+
+            if isinstance(data, dict) and "score" in data:
+                score = float(data["score"])
+                explanation = data.get("explanation", text)
+
+                # Validate score range
+                if 1 <= score <= 10:
+                    logger.debug(f"Successfully parsed JSON score: {score}")
+                    return score, explanation
+                else:
+                    logger.warning(f"JSON score {score} outside valid range [1, 10]")
+                    return -1.0, text
+            else:
+                logger.debug("JSON missing 'score' field")
+                return -1.0, text
+
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse JSON: {e}")
+            return -1.0, text
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Invalid score value in JSON: {e}")
+            return -1.0, text
+
     def parse_score_from_text(self, text: str) -> float:
         """
-        Parse the numerical score from the model's output text.
+        Parse the numerical score from the model's output text (FALLBACK METHOD).
 
-        Looks for score in \\boxed{X.X} format as per latest best practices
-        for structured LLM output parsing.
+        Looks for score in \\boxed{X.X} format. This is a fallback for models
+        that don't support JSON mode. Primary parsing is via parse_score_from_json().
 
         Args:
             text (str): Model output containing the score.
 
         Returns:
-            float: Parsed score between 0 and 10, or -1.0 if invalid.
+            float: Parsed score between 1 and 10, or -1.0 if invalid.
         """
-        # Look for \boxed{score} pattern
-        match = re.search(r'\\boxed\{(\d*\.?\d+)\}', text)
+        # Fixed regex pattern: \d+ requires at least one digit before optional decimal
+        # This matches: \boxed{7}, \boxed{7.5}, \boxed{10}, etc.
+        match = re.search(r'\\boxed\{(\d+\.?\d*)\}', text)
         if match:
             try:
                 score = float(match.group(1))
-                if 0 <= score <= 10:
+                if 1 <= score <= 10:
+                    logger.debug(f"Successfully parsed regex score: {score}")
                     return score
-                logger.warning(f"Score {score} outside valid range [0, 10]")
+                logger.warning(f"Score {score} outside valid range [1, 10]")
             except ValueError:
                 logger.warning(f"Could not parse score from: {match.group(1)}")
 
@@ -152,16 +220,29 @@ Research Proposal:
             try:
                 logger.debug(f"Scoring attempt {retry_count + 1}/{max_retries + 1} for: {title or 'proposal'}")
 
+                # Use JSON schema for structured output (2025 best practice)
                 response = await self.client.chat.completions.create(
                     model=self.config.model_name,
                     messages=messages,
                     temperature=self.config.temperature,  # Lower temperature for consistency
                     max_tokens=self.config.max_tokens,
                     top_p=self.config.top_p,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": self.SCORE_JSON_SCHEMA
+                    }
                 )
 
                 output_text = response.choices[0].message.content.strip()
-                score = self.parse_score_from_text(output_text)
+
+                # Try JSON parsing first (primary method)
+                score, explanation = self.parse_score_from_json(output_text)
+
+                # If JSON parsing fails, fall back to regex (for models without JSON support)
+                if score == -1.0:
+                    logger.debug("JSON parsing failed, trying regex fallback...")
+                    score = self.parse_score_from_text(output_text)
+                    explanation = output_text
 
                 if score != -1.0:
                     # Valid score obtained
@@ -169,7 +250,7 @@ Research Proposal:
                     return {
                         "title": title,
                         "score": score,
-                        "evaluation": output_text,
+                        "evaluation": explanation,
                         "proposal": proposal,
                         "retries": retry_count,
                         "success": True
@@ -177,6 +258,7 @@ Research Proposal:
 
                 # Invalid score format, retry
                 logger.warning(f"Invalid score format in response for '{title}', retrying...")
+                logger.debug(f"Response was: {output_text[:200]}")
                 retry_count += 1
 
             except RateLimitError as e:

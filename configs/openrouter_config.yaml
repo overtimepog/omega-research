@@ -6,7 +6,7 @@ max_iterations: 1000
 checkpoint_interval: 50
 log_level: "INFO"
 log_dir: null
-best_solution_dir: null  # Directory to auto-save best solution (default: output_dir/best_solution)
+best_solution_dir: results/best_solution  # Directory to auto-save best solution (default: output_dir/best_solution)
 random_seed: null
 
 # Evolution settings
@@ -101,12 +101,26 @@ rewardmodel:
   model_type: api
   model_name: "baidu/ernie-4.5-21b-a3b-thinking"
 
+  # Recommended models for LLM-as-judge scoring (November 2025):
+  # Best for structured evaluation:
+  #   - "google/gemini-2.5-flash" (fast, cost-effective, excellent JSON output)
+  #   - "anthropic/claude-sonnet-4.5" (superior instruction following, reliable)
+  #   - "openai/gpt-5.1" (best-in-class accuracy, premium pricing)
+  #
+  # Reasoning-focused:
+  #   - "openrouter/sherlock-think-alpha" (logical scoring, step-by-step reasoning)
+  #   - "moonshotai/kimi-k2-thinking" (multi-step reasoning, explicit logic)
+  #
+  # Budget-friendly:
+  #   - "minimax/m2" (cost-effective, reliable basic scoring)
+  #   - "google/gemini-2.5-flash" (best speed-cost ratio)
+
   # API configuration - OpenRouter
   base_url: "https://openrouter.ai/api/v1"
   api_key: "${OPENROUTER_API_KEY}"  # Set via environment variable
 
   # Generation parameters
-  temperature: 0.7
+  temperature: 0.3  # Lower temp (0.2-0.3) for consistent scoring (2025 best practice)
   top_p: 0.95
   max_tokens: 4096
 
