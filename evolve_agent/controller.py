@@ -453,7 +453,10 @@ Return the proposal as a clear, concise research abstract."""
                 inspirations=inspirations,
                 evolution_round=i
             )
-            
+
+            # Generate concise summary for console display
+            proposal_summary = await self.reward_model.summarize_proposal(new_proposal)
+
             # Step 2: Score the new proposal using RewardModel
             new_proposal_results = await self.reward_model.score_research_proposal(new_proposal)
             new_proposal_score = new_proposal_results[0].get('score', -1.0)
@@ -462,9 +465,10 @@ Return the proposal as a clear, concise research abstract."""
             if new_proposal_score < self.config.rewardmodel.proposal_score_threshold:
                 logger.info(f"Iteration {i+1}: Proposal score {new_proposal_score:.4f} below threshold "
                            f"{self.config.rewardmodel.proposal_score_threshold:.4f}, skipping program generation")
+                logger.info(f"  Proposal: {proposal_summary}")
                 continue
-            
-            logger.info(f"Iteration {i+1}: Proposal score: {new_proposal_score:.4f} / 10")
+
+            logger.info(f"Iteration {i+1}: Score {new_proposal_score:.1f}/10 | {proposal_summary}")
             
 
             # Step 4: Build prompt for program generation using all information

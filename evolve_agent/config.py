@@ -169,6 +169,10 @@ class RewardModelConfig:
     max_retries: int = 5  # Exponential backoff implemented in reward_model
     retry_delay: int = 2  # Base delay in seconds (exponential backoff)
 
+    # Proposal summarization for console display
+    enable_summarization: bool = True  # Generate concise summaries for console logs
+    summary_max_tokens: int = 150  # Token limit for summaries (shorter = faster/cheaper)
+
 @dataclass
 class PromptConfig:
     """Configuration for prompt generation"""

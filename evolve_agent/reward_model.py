@@ -85,6 +85,32 @@ Research Proposal:
         "strict": True
     }
 
+    # Summarization prompt for concise proposal summaries
+    SUMMARY_PROMPT_TEMPLATE = """Summarize the following research proposal in 1-2 concise sentences.
+Focus on the key contribution and approach. Be clear and specific.
+
+Research Proposal:
+{proposal}
+
+Provide ONLY the summary, nothing else."""
+
+    # JSON schema for summary output
+    SUMMARY_JSON_SCHEMA = {
+        "name": "proposal_summary",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Concise 1-2 sentence summary of the research proposal"
+                }
+            },
+            "required": ["summary"],
+            "additionalProperties": False
+        },
+        "strict": True
+    }
+
     def __init__(self, config: RewardModelConfig):
         """
         Initialize the RewardModel with OpenRouter API.
@@ -344,6 +370,103 @@ Research Proposal:
         logger.info(f"Completed scoring: {success_count}/{len(data)} successful")
 
         return results
+
+    async def summarize_proposal(self, proposal: List[str]) -> str:
+        """
+        Generate a concise summary of a research proposal for console display.
+
+        Uses LLM to create a 1-2 sentence summary focusing on key contribution
+        and approach. Uses JSON mode for reliable parsing.
+
+        Args:
+            proposal (List[str]): Full research proposal text as list of strings.
+
+        Returns:
+            str: Concise summary (1-2 sentences), or first 100 chars of proposal if summarization fails.
+        """
+        # Skip if summarization is disabled
+        if not getattr(self.config, 'enable_summarization', True):
+            proposal_text = "\n".join(proposal) if isinstance(proposal, list) else str(proposal)
+            return proposal_text[:100] + "..." if len(proposal_text) > 100 else proposal_text
+
+        # Format proposal
+        proposal_text = "\n".join(proposal) if isinstance(proposal, list) else str(proposal)
+
+        # Skip if proposal is already short
+        if len(proposal_text) <= 150:
+            return proposal_text
+
+        # Prepare the prompt
+        prompt = self.SUMMARY_PROMPT_TEMPLATE.format(proposal=proposal_text)
+        messages = [
+            {"role": "system", "content": "You are a concise technical summarizer."},
+            {"role": "user", "content": prompt}
+        ]
+
+        # Get summary tokens limit from config or use default
+        summary_max_tokens = getattr(self.config, 'summary_max_tokens', 150)
+
+        # Try with JSON schema first (for models that support it)
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.config.model_name,
+                messages=messages,
+                temperature=0.7,  # Higher temperature for more natural summaries
+                max_tokens=summary_max_tokens,
+                top_p=0.95,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": self.SUMMARY_JSON_SCHEMA
+                }
+            )
+
+            output_text = response.choices[0].message.content.strip()
+
+            # Parse JSON response
+            try:
+                data = json.loads(output_text)
+                if "summary" in data:
+                    summary = data["summary"].strip()
+                    logger.debug(f"Generated proposal summary: {summary[:50]}...")
+                    return summary
+            except json.JSONDecodeError:
+                logger.debug("Failed to parse summary JSON, using raw output")
+                return output_text[:200] if len(output_text) > 200 else output_text
+
+        except Exception as e:
+            # If JSON schema not supported, try without it
+            if "structured outputs not support" in str(e) or "400" in str(e):
+                logger.debug("Model doesn't support JSON schema, trying plain mode")
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=self.config.model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=summary_max_tokens,
+                        top_p=0.95
+                    )
+
+                    output_text = response.choices[0].message.content
+                    if output_text:
+                        output_text = output_text.strip()
+                    logger.debug(f"Raw response: {repr(output_text)}")
+
+                    if not output_text:
+                        logger.debug("Empty response from model, using fallback")
+                        return proposal_text[:100] + "..." if len(proposal_text) > 100 else proposal_text
+
+                    logger.debug(f"Generated proposal summary (plain mode): {output_text[:50]}...")
+
+                    # Return raw output, limiting length
+                    return output_text[:250] if len(output_text) > 250 else output_text
+
+                except Exception as e2:
+                    logger.debug(f"Plain mode also failed: {e2}")
+            else:
+                logger.debug(f"Failed to generate summary: {e}")
+
+        # Fallback to truncated proposal
+        return proposal_text[:100] + "..." if len(proposal_text) > 100 else proposal_text
 
     async def _write_result_to_jsonl(self, result: Dict) -> None:
         """

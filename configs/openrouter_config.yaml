@@ -99,15 +99,16 @@ evaluator:
 # Reward model configuration - OpenRouter API
 rewardmodel:
   model_type: api
-  model_name: "baidu/ernie-4.5-21b-a3b-thinking"
+  model_name: "moonshotai/kimi-k2-thinking"
 
   # Recommended models for LLM-as-judge scoring (November 2025):
-  # Best for structured evaluation:
+  # Best for structured evaluation & summarization:
   #   - "google/gemini-2.5-flash" (fast, cost-effective, excellent JSON output)
   #   - "anthropic/claude-sonnet-4.5" (superior instruction following, reliable)
   #   - "openai/gpt-5.1" (best-in-class accuracy, premium pricing)
+  #   - "qwen/qwen-2.5-7b-instruct" (fast, good for summaries)
   #
-  # Reasoning-focused:
+  # Reasoning-focused (NOTE: "thinking" models may not work well for summarization):
   #   - "openrouter/sherlock-think-alpha" (logical scoring, step-by-step reasoning)
   #   - "moonshotai/kimi-k2-thinking" (multi-step reasoning, explicit logic)
   #
@@ -122,7 +123,7 @@ rewardmodel:
   # Generation parameters
   temperature: 0.3  # Lower temp (0.2-0.3) for consistent scoring (2025 best practice)
   top_p: 0.95
-  max_tokens: 4096
+  max_tokens: 8192
 
   # Scoring threshold
   proposal_score_threshold: 5.5
@@ -131,6 +132,12 @@ rewardmodel:
   jsonl_file: "results/reward_results.jsonl"
   max_retries: 5
   retry_delay: 5
+
+  # Proposal summarization for console display (enabled by default)
+  # NOTE: "Thinking" models may return empty responses for summarization
+  # For best results, use non-thinking models like gemini-2.5-flash or qwen-2.5-7b-instruct
+  enable_summarization: true  # Generate concise summaries for console logs
+  summary_max_tokens: 150  # Token limit for summaries (shorter = faster/cheaper)
 
 # Recommended OpenRouter models for evolution:
 # Fast & Cost-Effective:
