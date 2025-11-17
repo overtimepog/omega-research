@@ -29,3 +29,6 @@ configs/deepseek_config.yaml
 .idea/
 *.swp
 *.swo
+
+**/evolve_agent_output
+
