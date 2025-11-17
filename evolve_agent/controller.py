@@ -1047,8 +1047,8 @@ Return the proposal as a clear, concise research abstract."""
             child_metrics_str = _format_metrics(child_program.metrics) if child_program.metrics else "No metrics"
 
             # Build prompt
-            system_message = self.template_manager.get_template("changes_doc_system")
-            user_message = self.template_manager.get_template("changes_doc_user").format(
+            system_message = self.prompt_sampler.template_manager.get_template("changes_doc_system")
+            user_message = self.prompt_sampler.template_manager.get_template("changes_doc_user").format(
                 language=self.language,
                 parent_code=parent_program.code,
                 child_code=child_program.code,
