@@ -20,11 +20,17 @@ from evolve_agent.prompt.sampler import PromptSampler
 from evolve_agent.reward_model import RewardModel
 from evolve_agent.utils.code_utils import (
     apply_diff,
+    compute_unified_diff,
     extract_code_language,
     extract_diffs,
     format_diff_summary,
     parse_evolve_blocks,
     parse_full_rewrite,
+)
+from evolve_agent.models.change_documentation import (
+    ChangeDocumentation,
+    CodeChange,
+    MetricChange,
 )
 from evolve_agent.utils.format_utils import (
     format_metrics_safe,
@@ -792,7 +798,7 @@ Return the proposal as a clear, concise research abstract."""
                     logger.info(f"🌟 New best solution found at iteration {i+1}: {child_program.id}")
                     logger.info(f"Metrics: {format_metrics_safe(child_program.metrics)}")
                     # Auto-save the new best solution
-                    self._save_best_solution_incremental(child_program)
+                    await self._save_best_solution_incremental(child_program)
 
                 # Save checkpoint
                 if (i + 1) % self.config.checkpoint_interval == 0:
@@ -1002,7 +1008,205 @@ Return the proposal as a clear, concise research abstract."""
 
         logger.info(f"Saved best program to {code_path} with program info to {info_path}")
 
-    def _save_best_solution_incremental(self, program: Program) -> None:
+    async def _generate_changes_documentation(
+        self, child_program: Program, parent_program: Optional[Program]
+    ) -> Optional[str]:
+        """
+        Generate documentation explaining code changes using LLM
+
+        Args:
+            child_program: The improved program
+            parent_program: The parent program (if available)
+
+        Returns:
+            Markdown documentation string or None if generation fails
+        """
+        import json
+
+        if parent_program is None:
+            logger.info("No parent program available for changes documentation")
+            return None
+
+        logger.info(
+            f"Generating changes documentation (child: {child_program.id}, parent: {parent_program.id})"
+        )
+
+        try:
+            # Compute unified diff
+            unified_diff = compute_unified_diff(parent_program.code, child_program.code, context_lines=5)
+
+            if not unified_diff.strip():
+                logger.info("No code changes detected between parent and child")
+                return None
+
+            # Format proposal
+            proposal_text = "\n".join(child_program.proposal) if child_program.proposal else "No specific proposal available"
+
+            # Format metrics
+            parent_metrics_str = _format_metrics(parent_program.metrics) if parent_program.metrics else "No metrics"
+            child_metrics_str = _format_metrics(child_program.metrics) if child_program.metrics else "No metrics"
+
+            # Build prompt
+            system_message = self.template_manager.get_template("changes_doc_system")
+            user_message = self.template_manager.get_template("changes_doc_user").format(
+                language=self.language,
+                parent_code=parent_program.code,
+                child_code=child_program.code,
+                unified_diff=unified_diff,
+                proposal=proposal_text,
+                parent_metrics=parent_metrics_str,
+                child_metrics=child_metrics_str,
+            )
+
+            # Call LLM with retry logic
+            max_retries = getattr(self.config, "changes_doc_max_retries", 3)
+
+            for retry_attempt in range(max_retries):
+                try:
+                    logger.debug(f"Calling LLM for changes documentation (attempt {retry_attempt + 1}/{max_retries})")
+
+                    llm_response = await self.llm_ensemble.generate_with_context(
+                        system_message=system_message,
+                        messages=[{"role": "user", "content": user_message}],
+                    )
+
+                    # Parse JSON response
+                    # Remove markdown code blocks if present
+                    cleaned_response = llm_response.strip()
+                    if cleaned_response.startswith("```"):
+                        # Extract content between ```json and ```
+                        json_match = re.search(r"```(?:json)?\s*\n(.*?)\n```", cleaned_response, re.DOTALL)
+                        if json_match:
+                            cleaned_response = json_match.group(1)
+
+                    response_data = json.loads(cleaned_response)
+
+                    # Build ChangeDocumentation object
+                    changes = []
+                    for change_data in response_data.get("changes", []):
+                        changes.append(
+                            CodeChange(
+                                title=change_data.get("title", ""),
+                                location=change_data.get("location", ""),
+                                old_code=change_data.get("old_code", ""),
+                                new_code=change_data.get("new_code", ""),
+                                reason=change_data.get("reason", ""),
+                                impact=change_data.get("impact", ""),
+                            )
+                        )
+
+                    # Build metric changes
+                    metric_changes = []
+                    for metric_name in set(parent_program.metrics.keys()) | set(child_program.metrics.keys()):
+                        parent_val = parent_program.metrics.get(metric_name, 0.0)
+                        child_val = child_program.metrics.get(metric_name, 0.0)
+
+                        # Only include numeric metrics
+                        if isinstance(parent_val, (int, float)) and isinstance(child_val, (int, float)):
+                            metric_changes.append(
+                                MetricChange(
+                                    name=metric_name,
+                                    before=float(parent_val),
+                                    after=float(child_val),
+                                )
+                            )
+
+                    doc = ChangeDocumentation(
+                        summary=response_data.get("summary", ""),
+                        changes=changes,
+                        metric_changes=metric_changes,
+                        overall_impact=response_data.get("overall_impact", ""),
+                    )
+
+                    # Convert to markdown
+                    markdown_doc = doc.to_markdown()
+
+                    logger.info(
+                        f"Successfully generated changes documentation ({len(changes)} changes, {len(metric_changes)} metrics)"
+                    )
+
+                    return markdown_doc
+
+                except json.JSONDecodeError as e:
+                    logger.warning(
+                        f"Failed to parse JSON response (attempt {retry_attempt + 1}/{max_retries}): {e}"
+                    )
+                    if retry_attempt < max_retries - 1:
+                        delay = 0.5 * (2 ** retry_attempt)
+                        logger.debug(f"Retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(f"Failed to parse JSON response after {max_retries} attempts")
+                        # Fallback: create basic documentation from diff
+                        return self._create_fallback_documentation(
+                            parent_program, child_program, unified_diff
+                        )
+
+                except Exception as e:
+                    logger.warning(
+                        f"Error generating changes documentation (attempt {retry_attempt + 1}/{max_retries}): {e}"
+                    )
+                    if retry_attempt < max_retries - 1:
+                        delay = 0.5 * (2 ** retry_attempt)
+                        logger.debug(f"Retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            f"Failed to generate changes documentation after {max_retries} attempts: {e}"
+                        )
+                        logger.debug(traceback.format_exc())
+                        return None
+
+        except Exception as e:
+            logger.error(f"Unexpected error in _generate_changes_documentation: {e}")
+            logger.debug(traceback.format_exc())
+            return None
+
+        return None
+
+    def _create_fallback_documentation(
+        self, parent_program: Program, child_program: Program, unified_diff: str
+    ) -> str:
+        """
+        Create basic fallback documentation when LLM generation fails
+
+        Args:
+            parent_program: The parent program
+            child_program: The child program
+            unified_diff: The unified diff
+
+        Returns:
+            Basic markdown documentation
+        """
+        md = "# Code Evolution Changes\n\n"
+        md += "## Summary\n\n"
+        md += "The code was modified to improve performance metrics.\n\n"
+
+        # Metrics table
+        if parent_program.metrics and child_program.metrics:
+            md += "## Metrics Improvement\n\n"
+            md += "| Metric | Before | After | Change |\n"
+            md += "|--------|--------|-------|--------|\n"
+
+            for metric_name in set(parent_program.metrics.keys()) | set(child_program.metrics.keys()):
+                parent_val = parent_program.metrics.get(metric_name, 0.0)
+                child_val = child_program.metrics.get(metric_name, 0.0)
+
+                if isinstance(parent_val, (int, float)) and isinstance(child_val, (int, float)):
+                    change_pct = ((child_val - parent_val) / abs(parent_val)) * 100 if parent_val != 0 else 0.0
+                    md += f"| {metric_name} | {parent_val:.6f} | {child_val:.6f} | {change_pct:+.1f}% |\n"
+
+            md += "\n"
+
+        # Diff
+        md += "## Code Changes\n\n"
+        md += "```diff\n"
+        md += unified_diff
+        md += "\n```\n"
+
+        return md
+
+    async def _save_best_solution_incremental(self, program: Program) -> None:
         """
         Save the best solution to a configurable directory, replacing any previous best solution.
         Called whenever a new best solution is found during evolution.
@@ -1069,6 +1273,28 @@ Return the proposal as a clear, concise research abstract."""
             f"💾 Auto-saved best solution to {best_solution_dir} "
             f"(Score: {format_metrics_safe(program.metrics)})"
         )
+
+        # Generate and save changes documentation if enabled
+        generate_changes_doc = getattr(self.config, "generate_changes_doc", True)
+        if generate_changes_doc and program.parent_id:
+            parent_program = self.database.get(program.parent_id)
+
+            if parent_program:
+                changes_md = await self._generate_changes_documentation(program, parent_program)
+
+                if changes_md:
+                    changes_path = os.path.join(best_solution_dir, "best_solution_changes.md")
+                    with open(changes_path, "w", encoding="utf-8") as f:
+                        f.write(changes_md)
+                    logger.info(f"📝 Saved changes documentation to {changes_path}")
+                else:
+                    logger.debug("Changes documentation generation returned None, skipping save")
+            else:
+                logger.debug(f"Parent program {program.parent_id} not found in database")
+        elif not generate_changes_doc:
+            logger.debug("Changes documentation generation is disabled in config")
+        else:
+            logger.debug("No parent program available for changes documentation")
 
 if __name__=='__main__':
     # Initialize the system

@@ -2,6 +2,7 @@
 Utilities for code parsing, diffing, and manipulation
 """
 
+import difflib
 import re
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -205,3 +206,122 @@ def extract_code_language(code: str) -> str:
         return "sql"
 
     return "unknown"
+
+
+def compute_unified_diff(old_code: str, new_code: str, context_lines: int = 3) -> str:
+    """
+    Compute a unified diff between two code strings
+
+    Args:
+        old_code: Original code
+        new_code: Modified code
+        context_lines: Number of context lines to include
+
+    Returns:
+        Unified diff string
+    """
+    old_lines = old_code.splitlines(keepends=True)
+    new_lines = new_code.splitlines(keepends=True)
+
+    diff = difflib.unified_diff(
+        old_lines, new_lines, fromfile="original", tofile="modified", lineterm="", n=context_lines
+    )
+
+    return "".join(diff)
+
+
+def extract_change_locations(unified_diff: str) -> List[Tuple[str, int, int]]:
+    """
+    Extract line number ranges from unified diff
+
+    Args:
+        unified_diff: Unified diff string
+
+    Returns:
+        List of tuples (change_type, start_line, end_line) where change_type is 'added', 'removed', or 'modified'
+    """
+    locations = []
+    hunk_pattern = r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@"
+
+    lines = unified_diff.split("\n")
+    current_old_line = 0
+    current_new_line = 0
+
+    for line in lines:
+        hunk_match = re.match(hunk_pattern, line)
+        if hunk_match:
+            old_start = int(hunk_match.group(1))
+            old_count = int(hunk_match.group(2) or 1)
+            new_start = int(hunk_match.group(3))
+            new_count = int(hunk_match.group(4) or 1)
+
+            current_old_line = old_start
+            current_new_line = new_start
+
+            # Determine change type based on counts
+            if old_count == 0:
+                # Pure addition
+                locations.append(("added", new_start, new_start + new_count - 1))
+            elif new_count == 0:
+                # Pure deletion
+                locations.append(("removed", old_start, old_start + old_count - 1))
+            else:
+                # Modification
+                locations.append(("modified", new_start, new_start + new_count - 1))
+
+    return locations
+
+
+def format_side_by_side_diff(old_code: str, new_code: str, max_width: int = 80) -> str:
+    """
+    Format a side-by-side diff for human readability
+
+    Args:
+        old_code: Original code
+        new_code: Modified code
+        max_width: Maximum width for each side
+
+    Returns:
+        Side-by-side diff string
+    """
+    old_lines = old_code.splitlines()
+    new_lines = new_code.splitlines()
+
+    # Use difflib to get opcodes
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+    result = []
+    result.append("=" * (max_width * 2 + 5))
+    result.append(f"{'BEFORE':<{max_width}} | {'AFTER':<{max_width}}")
+    result.append("=" * (max_width * 2 + 5))
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            # Show a few lines of context
+            for i in range(i1, min(i1 + 2, i2)):
+                old_line = old_lines[i][:max_width] if i < len(old_lines) else ""
+                new_line = new_lines[i - i1 + j1][:max_width] if (i - i1 + j1) < len(new_lines) else ""
+                result.append(f"{old_line:<{max_width}} | {new_line:<{max_width}}")
+
+        elif tag == "replace":
+            # Show the replaced lines
+            for i in range(i1, i2):
+                old_line = f"- {old_lines[i]}"[:max_width]
+                result.append(f"{old_line:<{max_width}} |")
+
+            for j in range(j1, j2):
+                new_line = f"+ {new_lines[j]}"[:max_width]
+                result.append(f"{'':<{max_width}} | {new_line:<{max_width}}")
+
+        elif tag == "delete":
+            for i in range(i1, i2):
+                old_line = f"- {old_lines[i]}"[:max_width]
+                result.append(f"{old_line:<{max_width}} |")
+
+        elif tag == "insert":
+            for j in range(j1, j2):
+                new_line = f"+ {new_lines[j]}"[:max_width]
+                result.append(f"{'':<{max_width}} | {new_line:<{max_width}}")
+
+    result.append("=" * (max_width * 2 + 5))
+    return "\n".join(result)

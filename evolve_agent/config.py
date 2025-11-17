@@ -298,6 +298,10 @@ class Config:
     max_code_length: int = 10000
     max_diff_generation_retries: int = 3  # Maximum retries for LLM diff generation (Research: LLM retry strategies 2025)
 
+    # Changes documentation settings
+    generate_changes_doc: bool = True  # Generate changes.md documentation when saving best solution
+    changes_doc_max_retries: int = 3  # Maximum retries for changes documentation LLM generation
+
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "Config":
         """Load configuration from a YAML file"""
@@ -423,6 +427,10 @@ class Config:
             "diff_based_evolution": self.diff_based_evolution,
             "allow_full_rewrites": self.allow_full_rewrites,
             "max_code_length": self.max_code_length,
+            "max_diff_generation_retries": self.max_diff_generation_retries,
+            # Changes documentation settings
+            "generate_changes_doc": self.generate_changes_doc,
+            "changes_doc_max_retries": self.changes_doc_max_retries,
         }
 
     def to_yaml(self, path: Union[str, Path]) -> None:

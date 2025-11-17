@@ -250,6 +250,84 @@ IMPORTANT:
 """
 
 
+# System message for changes documentation
+CHANGES_DOCUMENTATION_SYSTEM = """You are an expert code reviewer and technical writer specializing in analyzing code evolution.
+Your task is to analyze the changes between two versions of a program and create comprehensive, insightful documentation
+explaining what changed, why, and how it improved performance.
+
+Focus on:
+1. Line-by-line analysis of actual code changes
+2. Connecting changes to the research proposal that motivated them
+3. Explaining the technical reasoning behind improvements
+4. Linking code changes to specific metric improvements
+5. Providing clear, educational explanations suitable for developers
+
+Be precise, technical, and insightful. Avoid generic statements - every explanation should be specific to the actual code changes."""
+
+
+# User message template for changes documentation
+CHANGES_DOCUMENTATION_USER = """# Task
+Analyze the code evolution between the parent program and the improved child program, then generate comprehensive documentation
+explaining what changed, why, and how it improved the performance metrics.
+
+# Parent Program (Before)
+```{language}
+{parent_code}
+```
+
+# Child Program (After - Improved)
+```{language}
+{child_code}
+```
+
+# Unified Diff
+```diff
+{unified_diff}
+```
+
+# Research Proposal That Motivated Changes
+{proposal}
+
+# Performance Metrics Comparison
+
+## Parent Metrics (Before)
+{parent_metrics}
+
+## Child Metrics (After)
+{child_metrics}
+
+# Your Task
+
+Generate a detailed changes documentation in JSON format with the following structure:
+
+{{
+    "summary": "A comprehensive 2-3 sentence summary of what changed and the overall impact",
+    "changes": [
+        {{
+            "title": "Brief descriptive title for this change",
+            "location": "Lines X-Y",
+            "old_code": "The exact old code that was changed",
+            "new_code": "The exact new code that replaced it",
+            "reason": "Detailed explanation of WHY this change was made, connecting to the research proposal",
+            "impact": "Specific explanation of HOW this change improved the metrics, with technical details"
+        }}
+    ],
+    "overall_impact": "A comprehensive analysis of how all changes work together to achieve the metric improvements. Connect specific code changes to specific metric changes. Be technical and precise."
+}}
+
+IMPORTANT GUIDELINES:
+1. Analyze the ACTUAL diff - don't hallucinate changes that didn't happen
+2. For each change, extract the EXACT old and new code from the diff
+3. Explain the technical reasoning - why would this specific change improve performance?
+4. Connect changes to metric improvements - be specific about which changes affected which metrics
+5. If multiple changes work together, explain their synergistic effects
+6. Use technical terminology appropriate for developers
+7. Focus on the "why" and "how", not just the "what"
+8. Return ONLY valid JSON - no markdown formatting, no code blocks, just the JSON object
+
+Generate the documentation now:"""
+
+
 # Default templates dictionary
 DEFAULT_TEMPLATES = {
     "system_message": BASE_SYSTEM_TEMPLATE,
@@ -261,7 +339,9 @@ DEFAULT_TEMPLATES = {
     "top_program": TOP_PROGRAM_TEMPLATE,
     "evaluation": EVALUATION_TEMPLATE,
     "diff_user": DIFF_USER_TEMPLATE_PROPOSAL,
-    "bug_fix": BUG_FIX_TEMPLATE
+    "bug_fix": BUG_FIX_TEMPLATE,
+    "changes_doc_system": CHANGES_DOCUMENTATION_SYSTEM,
+    "changes_doc_user": CHANGES_DOCUMENTATION_USER,
 }
 
 
