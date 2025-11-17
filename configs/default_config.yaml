@@ -13,7 +13,12 @@ random_seed: null                     # Random seed for reproducibility (null = 
 # Evolution settings
 diff_based_evolution: true            # Use diff-based evolution (true) or full rewrites (false)
 allow_full_rewrites: false            # Allow occasional full rewrites even in diff-based mode
-max_code_length: 100000                # Maximum allowed code length in characters
+max_code_length: 100000               # Maximum allowed code length in characters
+max_diff_generation_retries: 3        # Maximum retries for LLM diff generation failures
+
+# Changes documentation settings
+generate_changes_doc: true            # Auto-generate changes.md explaining code evolution
+changes_doc_max_retries: 3            # Maximum retries for changes documentation LLM generation
 
 # LLM configuration
 llm:
