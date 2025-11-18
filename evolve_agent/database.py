@@ -814,10 +814,15 @@ class ProgramDatabase:
         import numpy as np
         percentile_threshold = np.percentile(scores, percentile * 100)
 
-        # Get initial program baseline (if available)
+        # Get initial program baseline (if available) - find program with generation 0
         baseline_threshold = -float('inf')
-        if self.initial_program_id and self.initial_program_id in self.programs:
-            initial_program = self.programs[self.initial_program_id]
+        initial_program = None
+        for program in self.programs.values():
+            if program.generation == 0:
+                initial_program = program
+                break
+
+        if initial_program:
             if "combined_score" in initial_program.metrics:
                 baseline_score = initial_program.metrics["combined_score"]
             else:
