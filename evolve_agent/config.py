@@ -221,6 +221,12 @@ class DatabaseConfig:
     exploitation_ratio: float = 0.7
     diversity_metric: str = "edit_distance"  # Options: "edit_distance", "feature_based"
 
+    # Dynamic quality thresholds for parent selection
+    parent_selection_percentile: float = 0.5  # Only top 50% of programs can be parents
+    archive_selection_percentile: float = 0.7  # Only top 30% can enter archive
+    min_score_vs_baseline: float = 0.5  # Must be at least 50% as good as initial program
+    enable_quality_filtering: bool = True  # Enable dynamic quality-based filtering
+
     # Feature map dimensions for MAP-Elites
     feature_dimensions: List[str] = field(default_factory=lambda: ["score", "complexity"])
     feature_bins: int = 10

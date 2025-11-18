@@ -391,6 +391,10 @@ Return the proposal as a clear, concise research abstract."""
             "traceback": error_traceback,
         }
 
+        # Track consecutive diff parsing failures to adjust strategy
+        consecutive_diff_failures = 0
+        use_full_rewrite_fallback = False
+
         for attempt in range(max_attempts):
             logger.info(f"Bug fix attempt {attempt + 1}/{max_attempts}")
 
@@ -398,18 +402,51 @@ Return the proposal as a clear, concise research abstract."""
                 # Build bug fix prompt
                 proposal_text = "\n".join(proposal) if proposal else "No proposal available"
 
-                # Get bug fix template
-                bug_fix_template = self.prompt_sampler.template_manager.get_template("bug_fix")
+                # Adapt strategy based on previous failures
+                if consecutive_diff_failures >= 5 or use_full_rewrite_fallback:
+                    # Fall back to full code rewrite after repeated diff failures
+                    logger.info(f"Switching to full code rewrite strategy after {consecutive_diff_failures} diff failures")
+                    bug_fix_prompt = f"""# Bug Fix Task (Full Rewrite Mode)
 
-                # Format the prompt
-                bug_fix_prompt = bug_fix_template.format(
-                    proposal_text=proposal_text,
-                    error_type=current_error_info["type"],
-                    error_message=current_error_info["message"],
-                    traceback=current_error_info["traceback"],
-                    buggy_code=current_code,
-                    language=self.language,
-                )
+The following program has a bug that needs fixing. Previous attempts to fix it using diffs failed.
+Please provide the COMPLETE fixed code in a code block.
+
+## Error Information
+- **Error Type**: {current_error_info["type"]}
+- **Error Message**: {current_error_info["message"]}
+
+## Full Traceback
+```
+{current_error_info["traceback"]}
+```
+
+## Buggy Program
+```{self.language}
+{current_code}
+```
+
+## Task
+Analyze the error and provide the COMPLETE fixed program. Return ONLY the fixed code in a ```{self.language} code block.
+Do NOT explain or add commentary. Just provide the working code.
+"""
+                    use_full_rewrite_fallback = True
+                else:
+                    # Get bug fix template
+                    bug_fix_template = self.prompt_sampler.template_manager.get_template("bug_fix")
+
+                    # Format the prompt
+                    bug_fix_prompt = bug_fix_template.format(
+                        proposal_text=proposal_text,
+                        error_type=current_error_info["type"],
+                        error_message=current_error_info["message"],
+                        traceback=current_error_info["traceback"],
+                        buggy_code=current_code,
+                        language=self.language,
+                    )
+
+                    # Add extra emphasis after repeated failures
+                    if consecutive_diff_failures >= 3:
+                        bug_fix_prompt += "\n\n**IMPORTANT**: You MUST use the exact SEARCH/REPLACE format shown in the example. Do not provide explanations or full code rewrites. Only provide diffs in the <<<<<<< SEARCH / ======= / >>>>>>> REPLACE format."
 
                 # Generate fix using LLM
                 system_message = "You are an expert debugger specializing in fixing runtime errors in research code."
@@ -418,20 +455,37 @@ Return the proposal as a clear, concise research abstract."""
                     messages=[{"role": "user", "content": bug_fix_prompt}],
                 )
 
-                # Parse diffs from response
-                diff_blocks = extract_diffs(llm_response)
+                # Try to parse as diffs first, fall back to full rewrite if needed
+                if use_full_rewrite_fallback:
+                    # Parse as full code rewrite
+                    from evolve_agent.utils.code_utils import parse_full_rewrite
+                    fixed_code = parse_full_rewrite(llm_response, self.language)
+                    if fixed_code and fixed_code != llm_response:
+                        logger.info(f"Bug fix attempt {attempt + 1}: Extracted full code rewrite")
+                        consecutive_diff_failures = 0  # Reset on success
+                    else:
+                        logger.warning(f"Bug fix attempt {attempt + 1}: Failed to extract code from full rewrite response")
+                        consecutive_diff_failures += 1
+                        continue
+                else:
+                    # Parse diffs from response
+                    diff_blocks = extract_diffs(llm_response)
 
-                if not diff_blocks:
-                    logger.warning(f"Bug fix attempt {attempt + 1}: No valid diffs found in LLM response")
-                    continue
+                    if not diff_blocks:
+                        consecutive_diff_failures += 1
+                        logger.warning(f"Bug fix attempt {attempt + 1}: No valid diffs found in LLM response (failure #{consecutive_diff_failures})")
+                        logger.debug(f"LLM response preview: {llm_response[:500]}...")
+                        continue
 
-                # Apply diffs to create fixed code
-                try:
-                    fixed_code = apply_diff(current_code, llm_response)
-                    logger.info(f"Bug fix attempt {attempt + 1}: Applied {len(diff_blocks)} diffs")
-                except Exception as diff_error:
-                    logger.warning(f"Bug fix attempt {attempt + 1}: Failed to apply diffs: {diff_error}")
-                    continue
+                    # Apply diffs to create fixed code
+                    try:
+                        fixed_code = apply_diff(current_code, llm_response)
+                        logger.info(f"Bug fix attempt {attempt + 1}: Applied {len(diff_blocks)} diffs")
+                        consecutive_diff_failures = 0  # Reset on successful diff parsing
+                    except Exception as diff_error:
+                        consecutive_diff_failures += 1
+                        logger.warning(f"Bug fix attempt {attempt + 1}: Failed to apply diffs: {diff_error} (failure #{consecutive_diff_failures})")
+                        continue
 
                 # Evaluate the fixed code
                 fix_attempt_id = f"{original_program_id}_fix_{attempt + 1}"

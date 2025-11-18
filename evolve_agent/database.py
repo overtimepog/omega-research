@@ -243,7 +243,7 @@ class ProgramDatabase:
 
     def sample(self) -> Tuple[Program, List[Program]]:
         """
-        Sample a program and inspirations for the next evolution step
+        Sample a program and inspirations for the next evolution step with quality filtering
 
         Returns:
             Tuple of (parent_program, inspiration_programs)
@@ -254,7 +254,16 @@ class ProgramDatabase:
         # Select inspirations
         inspirations = self._sample_inspirations(parent, n=5)
 
-        logger.debug(f"Sampled parent {parent.id} and {len(inspirations)} inspirations")
+        # Log selection details
+        parent_score = self._get_program_score(parent.id)
+        parent_iteration = parent.metadata.get("iteration_found", "unknown")
+        parent_island = parent.metadata.get("island", "unknown")
+
+        logger.debug(
+            f"Sampled parent {parent.id} (score={parent_score:.4f}, iteration={parent_iteration}, island={parent_island}) "
+            f"and {len(inspirations)} inspirations"
+        )
+
         return parent, inspirations
 
     def get_best_program(self, metric: Optional[str] = None) -> Optional[Program]:
@@ -679,14 +688,25 @@ class ProgramDatabase:
 
     def _update_archive(self, program: Program) -> None:
         """
-        Update the archive of elite programs
+        Update the archive of elite programs with quality threshold filtering
 
         Args:
             program: Program to consider for archive
         """
+        # Check if program meets minimum quality threshold for archive
+        archive_threshold = self._calculate_score_threshold(self.config.archive_selection_percentile)
+        program_score = self._get_program_score(program.id)
+
+        if program_score < archive_threshold:
+            logger.debug(
+                f"Program {program.id} score {program_score:.4f} below archive threshold {archive_threshold:.4f}, not adding to archive"
+            )
+            return
+
         # If archive not full, add program
         if len(self.archive) < self.config.archive_size:
             self.archive.add(program.id)
+            logger.debug(f"Added program {program.id} (score={program_score:.4f}) to archive")
             return
 
         # Clean up stale references and get valid archive programs
@@ -755,9 +775,129 @@ class ProgramDatabase:
             else:
                 logger.info(f"New best program {program.id} replaces {old_id}")
 
-    def _filter_error_programs(self, program_ids: List[str]) -> List[str]:
+    def _calculate_score_threshold(self, percentile: float = 0.5) -> float:
         """
-        Filter out programs that have errors in their metrics.
+        Calculate dynamic score threshold based on population statistics and initial baseline.
+
+        Args:
+            percentile: Percentile of population to use as threshold (0.5 = median, 0.7 = top 30%)
+
+        Returns:
+            Minimum score threshold for selection
+        """
+        if not self.config.enable_quality_filtering:
+            return -float('inf')  # No filtering if disabled
+
+        # Collect all valid program scores (excluding error programs)
+        scores = []
+        for pid, program in self.programs.items():
+            # Skip programs with errors
+            has_error = "error" in program.metrics and program.metrics.get("error", 0) < 0
+            if has_error:
+                continue
+
+            # Get score (prefer combined_score, fallback to normalized average)
+            if "combined_score" in program.metrics:
+                score = program.metrics["combined_score"]
+            else:
+                from evolve_agent.utils.metrics_utils import safe_numeric_average
+                score = safe_numeric_average(program.metrics, auto_normalize=True)
+
+            scores.append(score)
+
+        # Handle edge case: no valid programs
+        if not scores:
+            logger.warning("No valid programs found for threshold calculation, using -inf")
+            return -float('inf')
+
+        # Calculate percentile threshold
+        import numpy as np
+        percentile_threshold = np.percentile(scores, percentile * 100)
+
+        # Get initial program baseline (if available)
+        baseline_threshold = -float('inf')
+        if self.initial_program_id and self.initial_program_id in self.programs:
+            initial_program = self.programs[self.initial_program_id]
+            if "combined_score" in initial_program.metrics:
+                baseline_score = initial_program.metrics["combined_score"]
+            else:
+                from evolve_agent.utils.metrics_utils import safe_numeric_average
+                baseline_score = safe_numeric_average(initial_program.metrics, auto_normalize=True)
+
+            # Minimum threshold is a fraction of the initial program's score
+            baseline_threshold = baseline_score * self.config.min_score_vs_baseline
+            logger.debug(
+                f"Baseline threshold: {baseline_threshold:.4f} "
+                f"({self.config.min_score_vs_baseline:.0%} of initial score {baseline_score:.4f})"
+            )
+
+        # Return the more restrictive threshold (higher value)
+        final_threshold = max(percentile_threshold, baseline_threshold)
+        logger.debug(
+            f"Calculated score threshold: {final_threshold:.4f} "
+            f"(percentile={percentile:.2f}, p_thresh={percentile_threshold:.4f}, "
+            f"baseline={baseline_threshold:.4f}, pop_size={len(scores)})"
+        )
+
+        return final_threshold
+
+    def _filter_valid_programs(self, program_ids: List[str], threshold: Optional[float] = None) -> List[str]:
+        """
+        Filter out programs with errors OR terrible scores relative to population.
+
+        Args:
+            program_ids: List of program IDs to filter
+            threshold: Minimum score threshold (if None, filtering is disabled)
+
+        Returns:
+            List of valid program IDs that pass quality checks
+        """
+        if threshold is None or threshold == -float('inf'):
+            # No threshold filtering, just remove error programs
+            return self._filter_error_programs_legacy(program_ids)
+
+        valid_programs = []
+        filtered_count = 0
+
+        for pid in program_ids:
+            if pid not in self.programs:
+                continue
+
+            program = self.programs[pid]
+
+            # Check for error flag
+            has_error = "error" in program.metrics and program.metrics.get("error", 0) < 0
+            if has_error:
+                filtered_count += 1
+                continue
+
+            # Check score threshold
+            if "combined_score" in program.metrics:
+                score = program.metrics["combined_score"]
+            else:
+                from evolve_agent.utils.metrics_utils import safe_numeric_average
+                score = safe_numeric_average(program.metrics, auto_normalize=True)
+
+            if score < threshold:
+                logger.debug(
+                    f"Filtered program {pid} with score={score:.4f} < threshold={threshold:.4f}"
+                )
+                filtered_count += 1
+                continue
+
+            valid_programs.append(pid)
+
+        if filtered_count > 0:
+            logger.debug(
+                f"Filtered {filtered_count}/{len(program_ids)} programs below quality threshold"
+            )
+
+        return valid_programs
+
+    def _filter_error_programs_legacy(self, program_ids: List[str]) -> List[str]:
+        """
+        Legacy method: Filter out only programs that have errors in their metrics.
+        Used when quality filtering is disabled.
 
         Args:
             program_ids: List of program IDs to filter
@@ -797,7 +937,7 @@ class ProgramDatabase:
 
     def _sample_exploration_parent(self) -> Program:
         """
-        Sample a parent for exploration (from current island)
+        Sample a parent for exploration (from current island) using quality filtering and tournament selection
         """
         current_island_programs = self.islands[self.current_island]
 
@@ -814,9 +954,12 @@ class ProgramDatabase:
                 # Use any available program
                 return next(iter(self.programs.values()))
 
-        # Clean up stale references and filter out error programs
+        # Calculate dynamic score threshold for parent selection
+        threshold = self._calculate_score_threshold(self.config.parent_selection_percentile)
+
+        # Clean up stale references and filter out error programs + low-quality programs
         valid_programs = [pid for pid in current_island_programs if pid in self.programs]
-        valid_programs = self._filter_error_programs(valid_programs)
+        valid_programs = self._filter_valid_programs(valid_programs, threshold)
 
         # Remove stale program IDs from island
         if len(valid_programs) < len(current_island_programs):
@@ -827,34 +970,78 @@ class ProgramDatabase:
             for stale_id in stale_ids:
                 self.islands[self.current_island].discard(stale_id)
 
-        # If no valid programs after cleanup, reinitialize island
+        # If no valid programs after threshold filtering, use tournament on all island programs
         if not valid_programs:
             logger.warning(
-                f"Island {self.current_island} has no valid programs after cleanup, reinitializing"
+                f"Island {self.current_island} has no programs above threshold, using tournament on all island programs"
             )
-            if self.best_program_id and self.best_program_id in self.programs:
-                best_program = self.programs[self.best_program_id]
-                self.islands[self.current_island].add(self.best_program_id)
-                best_program.metadata["island"] = self.current_island
-                return best_program
-            else:
-                return next(iter(self.programs.values()))
+            # Re-filter without threshold (error-only filtering)
+            fallback_programs = [pid for pid in current_island_programs if pid in self.programs]
+            fallback_programs = self._filter_error_programs_legacy(fallback_programs)
 
-        # Sample from valid programs
-        parent_id = random.choice(valid_programs)
+            if not fallback_programs:
+                # Island truly empty, reinitialize with best program
+                if self.best_program_id and self.best_program_id in self.programs:
+                    best_program = self.programs[self.best_program_id]
+                    self.islands[self.current_island].add(self.best_program_id)
+                    best_program.metadata["island"] = self.current_island
+                    return best_program
+                else:
+                    return next(iter(self.programs.values()))
+
+            # Use tournament on fallback programs
+            tournament_size = min(3, len(fallback_programs))
+            if tournament_size < 2:
+                parent_id = fallback_programs[0]
+            else:
+                tournament = random.sample(fallback_programs, tournament_size)
+                best_in_tournament = max(tournament, key=lambda pid: self._get_program_score(pid))
+                parent_id = best_in_tournament
+            return self.programs[parent_id]
+
+        # Tournament selection: pick best from random subset
+        tournament_size = min(3, len(valid_programs))  # Use tournament of 3 or less if not enough
+        if tournament_size < 2:
+            # Not enough for tournament, just pick the one program
+            parent_id = valid_programs[0]
+        else:
+            # Pick random subset and select best
+            tournament = random.sample(valid_programs, tournament_size)
+            best_in_tournament = max(
+                tournament,
+                key=lambda pid: self.programs[pid].metrics.get(
+                    "combined_score",
+                    self._get_program_score(pid)
+                )
+            )
+            parent_id = best_in_tournament
+
         return self.programs[parent_id]
+
+    def _get_program_score(self, program_id: str) -> float:
+        """Helper to get program score, with fallback to normalized average"""
+        if program_id not in self.programs:
+            return -float('inf')
+        program = self.programs[program_id]
+        if "combined_score" in program.metrics:
+            return program.metrics["combined_score"]
+        from evolve_agent.utils.metrics_utils import safe_numeric_average
+        return safe_numeric_average(program.metrics, auto_normalize=True)
 
     def _sample_exploitation_parent(self) -> Program:
         """
-        Sample a parent for exploitation (from archive/elite programs)
+        Sample a parent for exploitation (from archive/elite programs) using quality filtering
         """
         if not self.archive:
             # Fallback to exploration if no archive
             return self._sample_exploration_parent()
 
-        # Clean up stale references and filter out error programs
+        # Calculate dynamic score threshold for parent selection
+        threshold = self._calculate_score_threshold(self.config.parent_selection_percentile)
+
+        # Clean up stale references and filter out error programs + low-quality programs
         valid_archive = [pid for pid in self.archive if pid in self.programs]
-        valid_archive = self._filter_error_programs(valid_archive)
+        valid_archive = self._filter_valid_programs(valid_archive, threshold)
 
         # Remove stale program IDs from archive
         if len(valid_archive) < len(self.archive):
@@ -877,31 +1064,57 @@ class ProgramDatabase:
             if self.programs[pid].metadata.get("island") == self.current_island
         ]
 
-        if archive_programs_in_island:
-            parent_id = random.choice(archive_programs_in_island)
-            return self.programs[parent_id]
+        # Use tournament selection from island programs, or all archive if island has none
+        candidates = archive_programs_in_island if archive_programs_in_island else valid_archive
+
+        tournament_size = min(3, len(candidates))
+        if tournament_size < 2:
+            parent_id = candidates[0]
         else:
-            # Fall back to any valid archive program if current island has none
-            parent_id = random.choice(valid_archive)
-            return self.programs[parent_id]
+            tournament = random.sample(candidates, tournament_size)
+            best_in_tournament = max(tournament, key=lambda pid: self._get_program_score(pid))
+            parent_id = best_in_tournament
+
+        return self.programs[parent_id]
 
     def _sample_random_parent(self) -> Program:
         """
-        Sample a completely random parent from all programs
+        Sample a random parent from all programs using quality filtering and tournament selection
         """
         if not self.programs:
             raise ValueError("No programs available for sampling")
 
-        # Filter out error programs and sample randomly
+        # Calculate dynamic score threshold for parent selection
+        threshold = self._calculate_score_threshold(self.config.parent_selection_percentile)
+
+        # Filter out error programs and low-quality programs
         all_program_ids = list(self.programs.keys())
-        valid_program_ids = self._filter_error_programs(all_program_ids)
+        valid_program_ids = self._filter_valid_programs(all_program_ids, threshold)
 
         if not valid_program_ids:
-            # If all programs have errors, fall back to any program (shouldn't happen with bug fixer)
-            logger.warning("All programs have errors, sampling from error programs as fallback")
+            # If all programs fail threshold, fall back to error-only filtering
+            logger.warning("All programs below quality threshold, using tournament on all non-error programs")
+            valid_program_ids = self._filter_error_programs_legacy(all_program_ids)
+
+        if not valid_program_ids:
+            # If all programs have errors, use all programs (shouldn't happen with bug fixer)
+            logger.warning("All programs have errors, using tournament on all programs as last resort")
             valid_program_ids = all_program_ids
 
-        program_id = random.choice(valid_program_ids)
+        # Tournament selection: pick best from 3 random programs
+        tournament_size = min(3, len(valid_program_ids))
+        if tournament_size < 2:
+            # Only one program available
+            program_id = valid_program_ids[0]
+        else:
+            # Pick random subset and select best
+            tournament = random.sample(valid_program_ids, tournament_size)
+            best_in_tournament = max(
+                tournament,
+                key=lambda pid: self._get_program_score(pid)
+            )
+            program_id = best_in_tournament
+
         return self.programs[program_id]
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
