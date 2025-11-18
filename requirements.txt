@@ -14,6 +14,7 @@ numpy>=1.24.0
 torch
 torchtune
 torchao
+torchvision
 
 # Development dependencies (optional)
 # pytest>=7.4.0  # For running tests

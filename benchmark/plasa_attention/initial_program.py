@@ -16,6 +16,8 @@ from torchtune.modules import RotaryPositionalEmbeddings
 from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass
 from enum import Enum
+from types import SimpleNamespace
+import math
 
 
 # ==================== EXACT COPY: adaptive_sparse_attention.py ====================
@@ -40,13 +42,8 @@ class LayerSparsityConfig:
 
     def get_k_for_layer(self, layer_idx: int, seq_len: int) -> int:
         """Get k value for a specific layer"""
-        if layer_idx >= len(self.layer_k_ratios):
-            # Default to last value if layer index exceeds config
-            ratio = self.layer_k_ratios[-1]
-        else:
-            ratio = self.layer_k_ratios[layer_idx]
-
-        k = int(seq_len * ratio)
+        idx = min(layer_idx, len(self.layer_k_values) - 1)
+        k = self.layer_k_values[idx]
         return max(1, min(k, seq_len))  # Clamp to [1, seq_len]
 
 
@@ -364,6 +361,14 @@ class AdaptiveSparseAttention(nn.Module):
         self.k_gate_min = 0.5
         self.k_gate_max = 1.5
 
+        # Smooth adaptive-k tracking to avoid abrupt fluctuations
+        self.prev_adaptive_k: Optional[int] = None
+        self.max_k_delta_ratio = 0.2
+
+        self.entropy_ema = 0.0
+        self._entropy_ema_initialized = False
+        self.ema_decay = 0.92
+
         # Whether to use sparse attention
         self.use_sparse = True
 
@@ -397,30 +402,41 @@ class AdaptiveSparseAttention(nn.Module):
         stats = None
 
         if self.use_sparse:
-            # Compute index scores
             index_scores = self.indexer(x)
+            causal_mask = self.selector._get_causal_mask(
+                seq_len,
+                seq_len,
+                x.device
+            )
+            masked_index_scores = index_scores.masked_fill(
+                causal_mask.unsqueeze(0),
+                float('-inf')
+            )
 
-            gate_input = x.mean(dim=1)
-            gate_score = self.k_gate(gate_input).mean()
-            gate_factor = (0.75 + 0.5 * gate_score).clamp(self.k_gate_min, self.k_gate_max)
-            adaptive_k_value = torch.clamp(gate_factor * float(self.layer_top_k), 1.0, float(seq_len))
-            adaptive_k = int(adaptive_k_value.item())
+            entropy_mean, entropy_norm, entropy_factor = self._compute_entropy_stats(
+                masked_index_scores,
+                seq_len
+            )
+            gate_factor, adaptive_k = self._determine_adaptive_k(
+                entropy_factor,
+                entropy_norm,
+                seq_len,
+                x
+            )
 
             top_k_mask, top_k_indices, selector_stats = self.selector(
-                index_scores,
+                masked_index_scores,
                 top_k=adaptive_k,
-                apply_causal_mask=True
+                apply_causal_mask=False
             )
 
-            # Create attention mask
-            attn_mask = torch.zeros(
-                batch_size, 1, seq_len, seq_len,
-                device=x.device,
-                dtype=Q.dtype
+            neg_inf = torch.tensor(float('-inf'), dtype=Q.dtype, device=x.device)
+            attn_mask = torch.where(
+                top_k_mask.unsqueeze(1),
+                torch.zeros((), dtype=Q.dtype, device=x.device),
+                neg_inf
             )
-            attn_mask = attn_mask.masked_fill(~top_k_mask.unsqueeze(1), float('-inf'))
 
-            # Apply sparse attention
             attn_output = F.scaled_dot_product_attention(
                 Q, K, V,
                 attn_mask=attn_mask,
@@ -432,6 +448,8 @@ class AdaptiveSparseAttention(nn.Module):
                     'layer_idx': self.layer_idx,
                     'layer_k': adaptive_k,
                     'k_gate_factor': gate_factor.item(),
+                    'routing_entropy': entropy_mean.item(),
+                    'entropy_norm': entropy_norm.item(),
                     **selector_stats
                 }
         else:
@@ -455,6 +473,69 @@ class AdaptiveSparseAttention(nn.Module):
         output = self.w_o(attn_output)
 
         return output, stats
+
+    def _compute_entropy_stats(
+        self,
+        masked_index_scores: torch.Tensor,
+        seq_len: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Derive routing entropy statistics from masked index scores.
+
+        Tracks an EMA of entropy to stabilize adaptive k updates and exposes
+        normalized entropy for downstream gating logic.
+        """
+        probs = F.softmax(masked_index_scores, dim=-1)
+        entropy = -(probs * (probs + 1e-12).log()).sum(dim=-1)
+        entropy_mean = entropy.mean()
+        max_entropy = math.log(max(seq_len, 2))
+        entropy_norm = entropy_mean / (max_entropy + 1e-6)
+        entropy_norm = entropy_norm.clamp(0.0, 1.0)
+        entropy_factor = (1.0 - entropy_norm).clamp(0.0, 1.0)
+
+        if not self._entropy_ema_initialized:
+            self.entropy_ema = entropy_norm.detach()
+            self._entropy_ema_initialized = True
+        else:
+            self.entropy_ema = (
+                self.ema_decay * self.entropy_ema
+                + (1.0 - self.ema_decay) * entropy_norm.detach()
+            )
+
+        return entropy_mean, entropy_norm, entropy_factor
+
+    def _determine_adaptive_k(
+        self,
+        entropy_factor: torch.Tensor,
+        entropy_norm: torch.Tensor,
+        seq_len: int,
+        hidden_states: torch.Tensor
+    ) -> Tuple[torch.Tensor, int]:
+        """
+        Combine the gating head with entropy feedback to determine per-layer k.
+
+        Keeps adaptive-k updates smooth while also reacting to gating activations,
+        the entropy baseline, and the EMA-tracked confidence drift.
+        """
+        gate_input = hidden_states.mean(dim=1)
+        gate_value = self.k_gate(gate_input).squeeze(-1)
+        gate_factor = gate_value.mean().clamp(self.k_gate_min, self.k_gate_max)
+
+        entropy_delta = (entropy_norm - self.entropy_ema).clamp(-0.15, 0.15)
+        entropy_boost = 1.0 + entropy_factor + 0.5 * entropy_delta
+        adaptive_value = (
+            float(self.layer_top_k) * gate_factor * entropy_boost
+        ).clamp(1.0, float(seq_len))
+        adaptive_k = int(adaptive_value.round().item())
+
+        if self.prev_adaptive_k is not None:
+            max_delta = max(1, int(self.prev_adaptive_k * self.max_k_delta_ratio))
+            delta = adaptive_k - self.prev_adaptive_k
+            delta = max(-max_delta, min(max_delta, delta))
+            adaptive_k = self.prev_adaptive_k + delta
+
+        self.prev_adaptive_k = adaptive_k
+        return gate_factor, adaptive_k
 
     def enable_sparse(self):
         """Enable sparse attention"""
@@ -560,7 +641,7 @@ class Qwen3NextSparseMoeBlock(nn.Module):
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         batch_size, sequence_length, hidden_dim = hidden_states.shape
-        hidden_states_reshaped = hidden_states.view(-1, hidden_dim)
+        hidden_states_reshaped = hidden_states.flatten(0, 1)
         shared_expert_output = self.shared_expert(hidden_states_reshaped)
         router_logits = self.gate(hidden_states_reshaped)
         selected_experts, routing_weights = self.route_tokens_to_experts(hidden_states_reshaped, router_logits)
@@ -746,10 +827,10 @@ class PLASAQwen3Model(nn.Module):
 
         hidden_states = self.norm(hidden_states)
 
-        return type('ModelOutput', (), {
-            'last_hidden_state': hidden_states,
-            'past_key_values': past_key_values,
-        })()
+        return SimpleNamespace(
+            last_hidden_state=hidden_states,
+            past_key_values=past_key_values,
+        )
 
 
 class PLASAQwen3(nn.Module):
@@ -777,11 +858,11 @@ class PLASAQwen3(nn.Module):
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
-        return type('CausalLMOutput', (), {
-            'loss': loss,
-            'logits': logits,
-            'past_key_values': outputs.past_key_values,
-        })()
+        return SimpleNamespace(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+        )
 
 
 # Create PLASAModel wrapper for benchmark compatibility

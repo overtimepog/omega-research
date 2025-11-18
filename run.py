@@ -18,8 +18,8 @@ evolve_agent = EvolveAgent(
 )
 
 async def main():
-    best_program = await evolve_agent.run(iterations=50) 
-    print(best_program)
+    best_program = await evolve_agent.run(iterations=100) 
+    #print(best_program)
 
 asyncio.run(main())
 # print(evolve_agent)
