@@ -1,7 +1,3 @@
-<h1 align="center">
-<img src="./assets/logo.png" width="200" alt="OmegaResearch" />
-</h1>
-
 <p align="center">
   <a href=""><b>[Website]</b></a> •
   <a href="https://arxiv.org/abs/2511.08522"><b>[Original Paper]</b></a> •
@@ -346,7 +342,3 @@ This project is licensed under the MIT License - see the original [AlphaResearch
 - Research on **RepairAgent**, **SOAR**, and **ShinkaEvolve** for bug-fixing and self-improvement techniques
 
 ---
-
-<p align="center">
-<b>Omega Research</b> - Where failed experiments become future insights
-</p>
