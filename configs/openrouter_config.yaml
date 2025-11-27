@@ -19,6 +19,14 @@ max_diff_generation_retries: 5        # Maximum retries for LLM diff generation 
 generate_changes_doc: true            # Auto-generate changes.md explaining code evolution
 changes_doc_max_retries: 5            # Maximum retries for changes documentation LLM generation
 
+toxic_trait:
+    enabled: true
+    threshold: 0.85  # Child must score ≥85% of parent
+    comparison_metric: "combined_score"
+    failure_history_path: null  # Defaults to {db_path}/failures/
+    max_failures_in_prompt: 10  # Limit LLM context size
+
+
 # LLM configuration - OpenRouter API
 llm:
   # Models for evolution (using OpenRouter)

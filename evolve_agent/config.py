@@ -280,6 +280,26 @@ class EvaluatorConfig:
 
 
 @dataclass
+class ToxicTraitConfig:
+    """Configuration for toxic trait tracking system"""
+
+    # Enable/disable toxic trait tracking
+    enabled: bool = True
+
+    # Performance threshold (child must achieve this ratio of parent score)
+    threshold: float = 0.85  # 85% of parent score
+
+    # Metric to use for comparison ("combined_score" or "normalized_average")
+    comparison_metric: str = "combined_score"
+
+    # Path to store failure history (defaults to db_path/failures/)
+    failure_history_path: Optional[str] = None
+
+    # Maximum number of failures to include in LLM prompts
+    max_failures_in_prompt: int = 10
+
+
+@dataclass
 class Config:
     """Master configuration for EvolveAgent"""
 
@@ -297,6 +317,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     rewardmodel: RewardModelConfig = field(default_factory=RewardModelConfig)
+    toxic_trait: ToxicTraitConfig = field(default_factory=ToxicTraitConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -326,7 +347,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "rewardmodel"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "rewardmodel", "toxic_trait"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -347,6 +368,8 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "rewardmodel" in config_dict:
             config.rewardmodel = RewardModelConfig(**config_dict["rewardmodel"])
+        if "toxic_trait" in config_dict:
+            config.toxic_trait = ToxicTraitConfig(**config_dict["toxic_trait"])
 
         return config
 
@@ -428,6 +451,13 @@ class Config:
                 "jsonl_file": self.rewardmodel.jsonl_file,
                 "max_retries": self.rewardmodel.max_retries,
                 "retry_delay": self.rewardmodel.retry_delay,
+            },
+            "toxic_trait": {
+                "enabled": self.toxic_trait.enabled,
+                "threshold": self.toxic_trait.threshold,
+                "comparison_metric": self.toxic_trait.comparison_metric,
+                "failure_history_path": self.toxic_trait.failure_history_path,
+                "max_failures_in_prompt": self.toxic_trait.max_failures_in_prompt,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,

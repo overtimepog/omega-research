@@ -113,6 +113,10 @@ class PromptSampler:
             previous_programs, top_programs, language
         )
 
+        # Format failure history (pop from kwargs to avoid duplicate)
+        failure_history_raw = kwargs.pop('failure_history', [])
+        failure_history = self._format_failure_history(failure_history_raw)
+
         # Format artifacts section if enabled and available
         artifacts_section = ""
         if self.config.include_artifacts and program_artifacts:
@@ -137,6 +141,7 @@ class PromptSampler:
             artifacts=artifacts_section,
             evolution_history=evolution_history,
             current_proposal_text=current_proposal_str,
+            failure_history=failure_history,
             **kwargs,
         )
 
@@ -546,3 +551,35 @@ class PromptSampler:
                 scores.append(str(score_dict))
         
         return ", ".join(scores)
+
+    def _format_failure_history(self, failures: List[Dict]) -> str:
+        """
+        Format failure history for LLM prompt
+
+        Args:
+            failures: List of failure record dictionaries
+
+        Returns:
+            Formatted string describing failed approaches with LLM-analyzed reasons
+        """
+        if not failures:
+            return "No previous failures recorded."
+
+        formatted = ["Previously Failed Approaches (avoid these):"]
+
+        # Get max failures to show from config
+        max_failures = getattr(self.config, 'max_failures_in_prompt', 10)
+
+        for failure in failures[:max_failures]:
+            # Extract key information
+            program_id = failure.get('program_id', 'unknown')[:8]  # Short ID
+            ratio = failure.get('performance_ratio', 0.0)
+            proposal_summary = failure.get('proposal_summary', 'Unknown approach')
+            failure_reason = failure.get('failure_reason', 'Performance below threshold')
+
+            # Format: Proposal summary → Why it failed → Performance ratio
+            formatted.append(
+                f"- \"{proposal_summary}\" → {failure_reason} ({ratio:.1%} of parent, ID: {program_id})"
+            )
+
+        return "\n".join(formatted)

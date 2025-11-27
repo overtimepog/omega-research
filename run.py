@@ -11,9 +11,9 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 # )
 
 evolve_agent = EvolveAgent(
-    initial_program_path="benchmark/plasa_attention/initial_program.py",
-    evaluation_file="benchmark/plasa_attention/evaluator.py",
-    initial_proposal_path="benchmark/plasa_attention/initial_proposal.txt",
+    initial_program_path="benchmark/MSTD/initial_program.py",
+    evaluation_file="benchmark/MSTD/evaluator.py",
+    initial_proposal_path="benchmark/MSTD/initial_proposal.txt",
     config_path="configs/openrouter_config.yaml",
 )
 

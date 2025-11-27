@@ -15,6 +15,7 @@ import traceback
 from evolve_agent.config import Config, load_config
 from evolve_agent.database import Program, ProgramDatabase
 from evolve_agent.evaluator import Evaluator
+from evolve_agent.failure_tracker import FailureTracker
 from evolve_agent.llm.ensemble import LLMEnsemble
 from evolve_agent.prompt.sampler import PromptSampler
 from evolve_agent.reward_model import RewardModel
@@ -157,6 +158,22 @@ class EvolveAgent:
             database=self.database,
         )
 
+        # Initialize FailureTracker if toxic trait tracking is enabled
+        if self.config.toxic_trait.enabled:
+            # Extract benchmark name from evaluation file
+            benchmark_name = Path(evaluation_file).stem
+            db_path = self.config.database.db_path or self.output_dir
+
+            self.failure_tracker = FailureTracker(
+                config=self.config.toxic_trait,
+                db_path=db_path,
+                benchmark_name=benchmark_name
+            )
+            logger.info(f"Initialized FailureTracker for benchmark '{benchmark_name}'")
+        else:
+            self.failure_tracker = None
+            logger.info("Toxic trait tracking is disabled")
+
         logger.info(f"Initialized EvolveAgent with {initial_program_path} " f"and {evaluation_file}")
 
     def _setup_logging(self) -> None:
@@ -198,14 +215,14 @@ class EvolveAgent:
     ) -> List[str]:
         """
         Generate a new research proposal based on parent proposal, program, and metrics
-        
+
         Args:
             parent_proposal: The parent program's proposal
             parent_program: The parent program's code
             parent_metrics: The parent program's metrics
             inspirations: List of inspiration programs
             evolution_round: Current evolution round
-            
+
         Returns:
             List of strings representing the new proposal
         """
@@ -217,20 +234,20 @@ class EvolveAgent:
             inspirations=inspirations,
             evolution_round=evolution_round,
         )
-        
+
         # Generate new proposal using LLM
         try:
             proposal_response = await self.llm_ensemble.generate_with_context(
                 system_message=proposal_prompt["system"],
                 messages=[{"role": "user", "content": proposal_prompt["user"]}],
             )
-            
+
             # Parse the proposal response
             new_proposal = self._parse_proposal_response(proposal_response)
-            
+
             logger.info(f"Generated new proposal for evolution round {evolution_round}")
             return new_proposal
-            
+
         except Exception as e:
             logger.warning(f"Failed to generate new proposal: {e}")
             # Fallback to parent proposal with some modification
@@ -246,23 +263,23 @@ class EvolveAgent:
     ) -> Dict[str, str]:
         """
         Build a prompt for generating a new research proposal
-        
+
         Args:
             parent_proposal: The parent program's proposal
             parent_program: The parent program's code
             parent_metrics: The parent program's metrics
             inspirations: List of inspiration programs
             evolution_round: Current evolution round
-            
+
         Returns:
             Dictionary with 'system' and 'user' keys
         """
         # Format parent proposal
         parent_proposal_str = "\n".join(parent_proposal) if parent_proposal else ""
-        
+
         # Format metrics
         metrics_str = _format_metrics(parent_metrics)
-        
+
         # Format inspirations
         inspirations_str = ""
         if inspirations:
@@ -270,8 +287,8 @@ class EvolveAgent:
                 f"Program {i+1}:\nProposal: {' '.join(prog.proposal if prog.proposal else [])}\nMetrics: {_format_metrics(prog.metrics)}"
                 for i, prog in enumerate(inspirations[:3])
             ])
-        
-        system_message = """You are a research advisor tasked with evolving and improving research proposals. 
+
+        system_message = """You are a research advisor tasked with evolving and improving research proposals.
 Your goal is to generate a new research proposal that builds upon the current proposal while addressing its limitations and incorporating insights from successful approaches.
 
 Focus on:
@@ -309,36 +326,36 @@ Return the proposal as a clear, concise research abstract."""
     def _parse_proposal_response(self, response: str) -> List[str]:
         """
         Parse the LLM response to extract the new proposal
-        
+
         Args:
             response: Raw LLM response
-            
+
         Returns:
             List of strings representing the proposal
         """
         # Clean up the response
         proposal_text = response.strip()
-        
+
         # Remove any markdown formatting
         proposal_text = re.sub(r'^```.*?\n', '', proposal_text, flags=re.MULTILINE)
         proposal_text = re.sub(r'\n```$', '', proposal_text, flags=re.MULTILINE)
-           
+
         return [proposal_text]
 
     def _modify_parent_proposal(self, parent_proposal: List[str], parent_metrics: Dict[str, Any]) -> List[str]:
         """
         Fallback method to modify parent proposal when generation fails
-        
+
         Args:
             parent_proposal: The parent proposal
             parent_metrics: The parent metrics
-            
+
         Returns:
             Modified proposal
         """
         if not parent_proposal:
             return ["Enhanced research approach with improved methodology and performance optimization."]
-        
+
         # Simple modification by adding improvement context
         modified_proposal = []
         for part in parent_proposal:
@@ -346,7 +363,7 @@ Return the proposal as a clear, concise research abstract."""
             if "improvement" not in part.lower():
                 modified_part += " This approach has been enhanced based on performance analysis and optimization insights."
             modified_proposal.append(modified_part)
-        
+
         return modified_proposal
 
     async def _attempt_bug_fix(
@@ -609,8 +626,15 @@ Do NOT explain or add commentary. Just provide the working code.
 
             current_island_counter += 1
 
-            # Sample parent and inspirations from current island
-            parent, inspirations = self.database.sample()
+            # Get toxic programs set for filtering (if enabled)
+            toxic_programs = None
+            failure_history = None
+            if self.config.toxic_trait.enabled and self.failure_tracker:
+                toxic_programs = self.failure_tracker.toxic_programs
+                failure_history = self.failure_tracker.get_failure_history()
+
+            # Sample parent and inspirations from current island (with toxic filtering)
+            parent, inspirations = self.database.sample(toxic_programs=toxic_programs)
 
             # Get artifacts for the parent program if available
             parent_artifacts = self.database.get_artifacts(parent.id)
@@ -639,7 +663,7 @@ Do NOT explain or add commentary. Just provide the working code.
                 continue
 
             logger.info(f"Iteration {i+1}: Score {new_proposal_score:.1f}/10 | {proposal_summary}")
-            
+
 
             # Step 4: Build prompt for program generation using all information
             prompt = self.prompt_sampler.build_prompt(
@@ -655,6 +679,7 @@ Do NOT explain or add commentary. Just provide the working code.
                 current_proposal=new_proposal,
                 parent_proposal=parent.proposal,
                 proposal_score=new_proposal_score,
+                failure_history=failure_history,
             )
 
             # Generate code modification with retry logic (Research: LLM code generation best practices 2025)
@@ -806,6 +831,41 @@ Do NOT explain or add commentary. Just provide the working code.
                         "parent_metrics": parent.metrics,
                     },
                 )
+
+                # Check toxic trait threshold and mark if needed (Task 3.3)
+                # Compare against CURRENT BEST, not parent (dynamic rising baseline)
+                if self.config.toxic_trait.enabled and self.failure_tracker and child_program.parent_id is not None:
+                    # Get the current best program (dynamic baseline)
+                    best_program = self.database.get_best_program()
+
+                    if self.failure_tracker.should_mark_toxic(child_program, best_program):
+                        # Get performance ratio for failure analysis
+                        comparison_metric = self.config.toxic_trait.comparison_metric
+                        best_score = best_program.metrics.get(comparison_metric, 0.0)
+                        child_score = child_program.metrics.get(comparison_metric, 0.0)
+                        performance_ratio = child_score / best_score if best_score > 0 else 0.0
+
+                        # Use reward model to analyze WHY the program failed (with code analysis)
+                        failure_reason = await self.reward_model.explain_failure(
+                            proposal_summary=proposal_summary,
+                            parent_code=parent.code,
+                            child_code=child_program.code,
+                            parent_metrics=parent.metrics,
+                            child_metrics=child_program.metrics,
+                            performance_ratio=performance_ratio,
+                            threshold=self.config.toxic_trait.threshold
+                        )
+
+                        # Store the failure with real analysis
+                        self.failure_tracker.add_failure(
+                            child_program,
+                            parent,
+                            proposal_summary,
+                            failure_reason
+                        )
+                        logger.warning(
+                            f"Marked program {child_id} as toxic (vs best {best_program.id[:8]}): {failure_reason}"
+                        )
 
                 # Add to database (will be added to current island)
                 self.database.add(child_program, iteration=i + 1)

@@ -1,0 +1,57 @@
+# Example Configuration for Toxic Trait Tracking System
+# Add this section to your benchmark YAML configuration file
+
+toxic_trait:
+  # Enable or disable toxic trait tracking
+  # When enabled, programs that underperform relative to their parent are marked as "toxic"
+  # and excluded from being selected as parents or inspirations in future iterations
+  enabled: true
+
+  # Performance threshold (0.0 to 1.0)
+  # Child programs must achieve at least this ratio of their parent's score
+  # Example: 0.85 means child must score at least 85% of parent's combined_score
+  # Lower values = more lenient (fewer programs marked toxic)
+  # Higher values = more strict (more programs marked toxic)
+  threshold: 0.85
+
+  # Metric used for parent-child comparison
+  # Options:
+  #   - "combined_score": Use the combined_score metric from program evaluation
+  #   - "normalized_average": Use normalized average of all metrics
+  comparison_metric: "combined_score"
+
+  # Path to store failure history JSON files
+  # If null/omitted, defaults to {db_path}/failures/
+  # Supports environment variable expansion: ${VAR_NAME}
+  failure_history_path: null
+
+  # Maximum number of historical failures to include in LLM prompts
+  # Limits context size while providing recent failure information to guide proposals
+  # Recommended: 10-20 for balance between context size and information richness
+  max_failures_in_prompt: 10
+
+# Example: Strict mode (mark any regression as toxic)
+# toxic_trait:
+#   enabled: true
+#   threshold: 1.0
+#   comparison_metric: "combined_score"
+#   max_failures_in_prompt: 5
+
+# Example: Lenient mode (only mark severe underperformance)
+# toxic_trait:
+#   enabled: true
+#   threshold: 0.70
+#   comparison_metric: "combined_score"
+#   max_failures_in_prompt: 15
+
+# Example: Custom failure path with environment variable
+# toxic_trait:
+#   enabled: true
+#   threshold: 0.85
+#   comparison_metric: "combined_score"
+#   failure_history_path: "${EXPERIMENT_DIR}/failures"
+#   max_failures_in_prompt: 10
+
+# Example: Disabled (backward compatible with existing configs)
+# toxic_trait:
+#   enabled: false

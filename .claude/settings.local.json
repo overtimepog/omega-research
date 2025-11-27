@@ -16,7 +16,8 @@
       "WebFetch(domain:kellerjordan.github.io)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:medium.com)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "WebFetch(domain:buildermethods.com)"
     ],
     "deny": [],
     "ask": []

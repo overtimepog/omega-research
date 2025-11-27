@@ -94,6 +94,40 @@ Research Proposal:
 
 Provide ONLY the summary, nothing else."""
 
+    FAILURE_ANALYSIS_PROMPT_TEMPLATE = """Analyze why this program modification failed to meet performance expectations.
+
+**Proposal Summary:**
+{proposal_summary}
+
+**Parent Code:**
+```python
+{parent_code}
+```
+
+**Modified Code (FAILED):**
+```python
+{child_code}
+```
+
+**Parent Performance:**
+{parent_metrics}
+
+**Child Performance (BELOW THRESHOLD):**
+{child_metrics}
+
+**Performance Ratio:** {performance_ratio:.1%} of best (threshold: {threshold:.1%})
+
+Analyze the code changes and provide a concise 1-2 sentence technical explanation:
+- What specific code change caused the regression?
+- What aspect of the implementation was flawed?
+
+Be specific about the CODE, not just metrics. Focus on ROOT CAUSE.
+
+You MUST respond with valid JSON in this exact format:
+{{
+  "failure_reason": "<your 1-2 sentence technical explanation referencing the code>"
+}}"""
+
     # JSON schema for summary output
     SUMMARY_JSON_SCHEMA = {
         "name": "proposal_summary",
@@ -106,6 +140,23 @@ Provide ONLY the summary, nothing else."""
                 }
             },
             "required": ["summary"],
+            "additionalProperties": False
+        },
+        "strict": True
+    }
+
+    # JSON schema for failure analysis output
+    FAILURE_ANALYSIS_JSON_SCHEMA = {
+        "name": "failure_analysis",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "failure_reason": {
+                    "type": "string",
+                    "description": "Concise 1-2 sentence technical explanation of why the program failed"
+                }
+            },
+            "required": ["failure_reason"],
             "additionalProperties": False
         },
         "strict": True
@@ -467,6 +518,121 @@ Provide ONLY the summary, nothing else."""
 
         # Fallback to truncated proposal
         return proposal_text[:100] + "..." if len(proposal_text) > 100 else proposal_text
+
+    async def explain_failure(
+        self,
+        proposal_summary: str,
+        parent_code: str,
+        child_code: str,
+        parent_metrics: Dict[str, float],
+        child_metrics: Dict[str, float],
+        performance_ratio: float,
+        threshold: float
+    ) -> str:
+        """
+        Generate a concise explanation of why a program failed using LLM code analysis.
+
+        Uses the reward model to analyze the actual code changes and performance
+        regression to provide specific technical insights about what went wrong.
+
+        Args:
+            proposal_summary: Concise summary of the proposal that was implemented
+            parent_code: Parent program's source code
+            child_code: Child program's source code (failed)
+            parent_metrics: Parent program's performance metrics
+            child_metrics: Child program's performance metrics
+            performance_ratio: Child score / best score (e.g., 0.82 = 82%)
+            threshold: Minimum acceptable ratio (e.g., 0.85 = 85%)
+
+        Returns:
+            str: Concise 1-2 sentence code-specific explanation, or generic message if analysis fails
+        """
+        # Format metrics for readability
+        parent_metrics_str = "\n".join([f"- {k}: {v:.4f}" if isinstance(v, float) else f"- {k}: {v}"
+                                       for k, v in parent_metrics.items()])
+        child_metrics_str = "\n".join([f"- {k}: {v:.4f}" if isinstance(v, float) else f"- {k}: {v}"
+                                      for k, v in child_metrics.items()])
+
+        # Truncate code if too long (keep first 100 lines)
+        parent_code_lines = parent_code.split("\n")[:100]
+        child_code_lines = child_code.split("\n")[:100]
+        parent_code_truncated = "\n".join(parent_code_lines)
+        child_code_truncated = "\n".join(child_code_lines)
+
+        if len(parent_code.split("\n")) > 100:
+            parent_code_truncated += "\n# ... (truncated)"
+        if len(child_code.split("\n")) > 100:
+            child_code_truncated += "\n# ... (truncated)"
+
+        # Prepare the prompt with code
+        prompt = self.FAILURE_ANALYSIS_PROMPT_TEMPLATE.format(
+            proposal_summary=proposal_summary,
+            parent_code=parent_code_truncated,
+            child_code=child_code_truncated,
+            parent_metrics=parent_metrics_str,
+            child_metrics=child_metrics_str,
+            performance_ratio=performance_ratio,
+            threshold=threshold
+        )
+
+        messages = [
+            {"role": "system", "content": "You are an expert code reviewer analyzing performance regressions."},
+            {"role": "user", "content": prompt}
+        ]
+
+        # Try with JSON schema first (for models that support it)
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.config.model_name,
+                messages=messages,
+                temperature=0.5,  # Moderate temperature for analytical reasoning
+                max_tokens=200,  # Short explanation
+                top_p=0.95,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": self.FAILURE_ANALYSIS_JSON_SCHEMA
+                }
+            )
+
+            output_text = response.choices[0].message.content.strip()
+
+            # Parse JSON response
+            try:
+                data = json.loads(output_text)
+                if "failure_reason" in data:
+                    reason = data["failure_reason"].strip()
+                    logger.debug(f"Generated failure analysis: {reason[:80]}...")
+                    return reason
+            except json.JSONDecodeError:
+                logger.debug("Failed to parse failure analysis JSON, using raw output")
+                return output_text[:250] if len(output_text) > 250 else output_text
+
+        except Exception as e:
+            # If JSON schema not supported, try without it
+            if "structured outputs not support" in str(e) or "400" in str(e):
+                logger.debug("Model doesn't support JSON schema for failure analysis, trying plain mode")
+                try:
+                    response = await self.client.chat.completions.create(
+                        model=self.config.model_name,
+                        messages=messages,
+                        temperature=0.5,
+                        max_tokens=200,
+                        top_p=0.95
+                    )
+
+                    output_text = response.choices[0].message.content
+                    if output_text:
+                        output_text = output_text.strip()
+                        logger.debug(f"Generated failure analysis (plain mode): {output_text[:80]}...")
+                        return output_text[:250] if len(output_text) > 250 else output_text
+
+                except Exception as e2:
+                    logger.warning(f"Failed to generate failure analysis (plain mode): {e2}")
+            else:
+                logger.warning(f"Failed to generate failure analysis: {e}")
+
+        # Fallback to generic reason
+        return f"Performance dropped to {performance_ratio:.1%} of parent, below {threshold:.1%} threshold"
 
     async def _write_result_to_jsonl(self, result: Dict) -> None:
         """
