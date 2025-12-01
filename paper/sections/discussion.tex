@@ -1,0 +1,37 @@
+% Discussion Section
+
+%------------------------------------------------------------------------------
+\subsection{Limitations}
+\label{sec:limitations}
+
+\paragraph{Benchmark Specificity.} Our evaluation is limited to the 8 problems in AlphaResearchComp, which span geometry, harmonic analysis, and combinatorics. While these problems are representative of frontier mathematical challenges, the effectiveness of toxic trait tracking on other domains (e.g., machine learning optimization, systems programming) remains to be validated.
+
+\paragraph{Threshold Sensitivity.} The optimal toxic threshold $\tau_{\text{toxic}}$ may vary across problem domains. Our default of 0.85 works well for AlphaResearchComp but may be too strict or lenient for problems with different fitness landscapes. Developing adaptive threshold mechanisms is an important direction for future work.
+
+\paragraph{Reward Model Bias.} Our peer-review reward model is trained on machine learning papers from ICLR, which may introduce domain bias. Proposals for algorithm discovery in other fields (e.g., pure mathematics, biology) may not be accurately scored. Expanding the training data to include reviews from diverse venues could address this limitation.
+
+\paragraph{Compute Requirements.} Despite efficiency improvements, \ours{} still requires significant LLM API calls---typically 500--1000 per problem. For organizations with limited API budgets, this may be prohibitive. Future work could explore distillation to smaller local models.
+
+\paragraph{Failure Analysis Quality.} The quality of failure analysis depends on the LLM's ability to reason about code changes. For complex programs or subtle bugs, the root cause analysis may be superficial or incorrect. Human-in-the-loop verification could improve reliability.
+
+%------------------------------------------------------------------------------
+\subsection{Broader Impact}
+\label{sec:impact}
+
+\paragraph{Positive Impact.} \ours{} democratizes access to LLM-guided algorithm discovery by providing an open-source implementation with competitive performance. The efficiency improvements reduce the compute cost of discovery, making the technology more accessible to researchers with limited resources. The automatic documentation of code changes also improves transparency and reproducibility.
+
+\paragraph{Potential Risks.} Like all program synthesis systems, \ours{} could potentially be misused to generate adversarial code or optimize malicious algorithms. However, the system requires human-specified evaluation functions, which provides a natural checkpoint for oversight. We recommend that users of \ours{} implement appropriate safeguards when applying it to sensitive domains.
+
+%------------------------------------------------------------------------------
+\subsection{Future Work}
+\label{sec:future}
+
+\paragraph{Adaptive Thresholds.} Rather than using a fixed $\tau_{\text{toxic}}$, future work could learn optimal thresholds dynamically based on the fitness landscape characteristics observed during evolution.
+
+\paragraph{Similarity-Based Rejection.} Currently, toxic tracking operates on exact program IDs. Extending this to reject programs that are \emph{semantically similar} to known failures (using code embeddings) could prevent the system from regenerating slight variations of failed approaches.
+
+\paragraph{Cross-Benchmark Transfer.} Failure patterns learned on one benchmark might transfer to related problems. Investigating whether toxic trait knowledge can be shared across benchmarks could improve sample efficiency for new problems.
+
+\paragraph{Multi-Objective Toxic Tracking.} For problems with multiple evaluation metrics, different thresholds could be applied to different objectives, allowing fine-grained control over which aspects of performance trigger toxic marking.
+
+\paragraph{Integration with Formal Verification.} Combining toxic trait tracking with formal verification could provide stronger guarantees---programs that provably violate specifications could be immediately marked toxic without requiring evaluation.

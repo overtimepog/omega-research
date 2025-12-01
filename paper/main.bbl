@@ -1,0 +1,99 @@
+\begin{thebibliography}{14}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[AI(2025)]{shinkaevolve}
+Sakana AI.
+\newblock Shinkaevolve: Sample-efficient evolutionary code optimization.
+\newblock \emph{Sakana AI Blog}, 2025.
+\newblock URL \url{https://sakana.ai/shinka-evolve/}.
+
+\bibitem[Anonymous(2025{\natexlab{a}})]{codeprm}
+Anonymous.
+\newblock Codeprm: Process reward models for code generation with execution
+  feedback.
+\newblock In \emph{ACL Findings}, 2025{\natexlab{a}}.
+
+\bibitem[Anonymous(2025{\natexlab{b}})]{pgrpo}
+Anonymous.
+\newblock Posterior-grpo: Mitigating reward hacking in code generation.
+\newblock \emph{arXiv preprint arXiv:2508.05170}, 2025{\natexlab{b}}.
+
+\bibitem[Chen et~al.(2021)Chen, Tworek, Jun, Yuan, Pinto, Kaplan, Edwards,
+  Burda, Joseph, Brockman, et~al.]{codex}
+Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de~Oliveira
+  Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg
+  Brockman, et~al.
+\newblock Evaluating large language models trained on code.
+\newblock In \emph{arXiv preprint arXiv:2107.03374}, 2021.
+
+\bibitem[Dolson et~al.(2019)Dolson, Lalejini, and Ofria]{mapelites_gp}
+Emily Dolson, Alexander Lalejini, and Charles Ofria.
+\newblock Exploring genetic programming systems with map-elites.
+\newblock In \emph{Genetic Programming Theory and Practice XVI}, pages 1--16.
+  Springer, 2019.
+
+\bibitem[Forrest et~al.(1994)Forrest, Perelson, Allen, and
+  Cherukuri]{negative_selection}
+Stephanie Forrest, Alan~S Perelson, Lawrence Allen, and Rajesh Cherukuri.
+\newblock Negative selection algorithms for adaptive immunity.
+\newblock \emph{Proceedings of the 1994 IEEE Symposium on Security and
+  Privacy}, pages 202--212, 1994.
+
+\bibitem[Jain et~al.(2025)]{mucode}
+Naman Jain et~al.
+\newblock $\mu$code: Code generation from multi-turn execution feedback.
+\newblock In \emph{ICML}, 2025.
+
+\bibitem[Li et~al.(2022)Li, Choi, Chung, Kushman, Schrittwieser, Leblond,
+  Eccles, Keeling, Gimeno, Dal~Lago, et~al.]{alphacode}
+Yujia Li, David Choi, Junyoung Chung, Nate Kushman, Julian Schrittwieser,
+  R{\'e}mi Leblond, Tom Eccles, James Keeling, Felix Gimeno, Agustin Dal~Lago,
+  et~al.
+\newblock Competition-level code generation with alphacode.
+\newblock \emph{Science}, 378\penalty0 (6624):\penalty0 1092--1097, 2022.
+
+\bibitem[Mehta(2025)]{openevolve}
+Asankhaya Mehta.
+\newblock Openevolve: An open-source evolutionary coding agent.
+\newblock \emph{Hugging Face Blog}, 2025.
+\newblock URL \url{https://huggingface.co/blog/codelion/openevolve}.
+
+\bibitem[Mouret and Clune(2015)]{mapelites}
+Jean-Baptiste Mouret and Jeff Clune.
+\newblock Illuminating search spaces by mapping elites.
+\newblock In \emph{arXiv preprint arXiv:1504.04909}, 2015.
+
+\bibitem[Novikov et~al.(2025)]{alphaevolve}
+Alexander Novikov et~al.
+\newblock Alphaevolve: A gemini-powered coding agent for designing advanced
+  algorithms.
+\newblock \emph{Google DeepMind Blog}, 2025.
+\newblock URL
+  \url{https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/}.
+
+\bibitem[Romera-Paredes et~al.(2024)Romera-Paredes, Barekatain, Novikov, Balog,
+  Kumar, Dupont, Ruiz, Ellenberg, Wang, Fawzi, et~al.]{funsearch}
+Bernardino Romera-Paredes, Mohammadamin Barekatain, Alexander Novikov, Matej
+  Balog, M~Pawan Kumar, Emilien Dupont, Francisco~JR Ruiz, Jordan~S Ellenberg,
+  Pengming Wang, Omar Fawzi, et~al.
+\newblock Mathematical discoveries from program search with large language
+  models.
+\newblock \emph{Nature}, 625\penalty0 (7995):\penalty0 468--475, 2024.
+
+\bibitem[Team(2024)]{qwen2.5}
+Qwen Team.
+\newblock Qwen2.5 technical report.
+\newblock \emph{arXiv preprint}, 2024.
+
+\bibitem[Yu et~al.(2025)Yu, Feng, Zhao, He, Zhang, and Cohan]{alpharesearch}
+Zhaojian Yu, Kaiyue Feng, Yilun Zhao, Shilin He, Xiao-Ping Zhang, and Arman
+  Cohan.
+\newblock Alpharesearch: Accelerating new algorithm discovery with language
+  models.
+\newblock \emph{arXiv preprint arXiv:2511.08522}, 2025.
+
+\end{thebibliography}

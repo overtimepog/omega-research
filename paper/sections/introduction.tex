@@ -1,0 +1,36 @@
+% Introduction Section
+
+The automated discovery of novel algorithms represents one of the most ambitious goals in artificial intelligence. Recent breakthroughs have demonstrated that large language models (LLMs), when combined with evolutionary search, can discover algorithms that match or exceed human-designed solutions on challenging mathematical problems~\cite{funsearch,alphaevolve}. Systems like FunSearch~\cite{funsearch} and AlphaEvolve~\cite{alphaevolve} have achieved remarkable results on problems in extremal combinatorics, geometry, and optimization, sparking significant interest in \emph{LLM-guided program evolution} as a paradigm for scientific discovery.
+
+Despite these successes, current approaches suffer from a fundamental inefficiency: they lack mechanisms to learn from failed exploration paths. When an LLM generates a program modification that results in poor performance, the system simply discards it and moves on. This ``amnesia'' leads to several problems:
+
+\begin{enumerate}
+    \item \textbf{Wasted computation}: The system may repeatedly explore similar failed directions, regenerating modifications that have already proven unfruitful.
+    \item \textbf{No negative selection pressure}: Unlike biological evolution, where unsuccessful organisms are removed from the gene pool, current systems allow programs from failed lineages to continue influencing future generations through inspiration sampling.
+    \item \textbf{Static selection thresholds}: Comparing child performance against the immediate parent creates a fixed bar that doesn't adapt as the population improves.
+\end{enumerate}
+
+We introduce \ours{}, an evolutionary code optimization framework that addresses these limitations through three key innovations:
+
+\paragraph{Contribution 1: Toxic Trait Tracking.} We introduce a \emph{negative selection} mechanism that explicitly identifies underperforming programs as ``toxic'' and excludes them from the breeding population. Critically, we compare each program against the \textbf{current best solution} rather than its immediate parent, creating a \emph{dynamic baseline} that rises as evolution progresses. This ensures increasingly strict selection pressure over time.
+
+\paragraph{Contribution 2: Peer-Review Reward Decoupling.} We separate the evaluation of \emph{idea quality} from \emph{code quality} by introducing a reward model trained on real peer review data from ICLR 2017--2024. This model scores research proposals before any code is generated, enabling early filtering of low-quality ideas and reducing wasted API calls. Our reward model achieves 72\% accuracy on predicting paper acceptance, outperforming GPT-4 (53\%) and approaching human inter-annotator agreement (65\%).
+
+\paragraph{Contribution 3: Failure-Driven Learning.} Beyond simple exclusion, we record detailed failure information---including LLM-generated root cause analysis---and inject this history into future proposal prompts. This ``institutional memory'' helps the system avoid repeating known mistakes, accelerating convergence by preventing exploration of previously failed directions.
+
+\paragraph{Contribution 4: Automated Bug Fixing.} We implement a robust bug fixer loop that automatically repairs programs with syntax errors or runtime exceptions. Rather than discarding buggy programs, the system attempts up to 3 fix iterations using diff-based repairs, falling back to full rewrites after repeated failures. This recovers approximately 60--70\% of programs that would otherwise be lost, significantly improving the yield of LLM generation calls.
+
+We evaluate \ours{} on the AlphaResearchComp benchmark~\cite{alpharesearch}, a suite of 8 frontier mathematical problems spanning geometry, number theory, harmonic analysis, and combinatorics. Our results demonstrate that toxic trait tracking improves compute efficiency while achieving competitive final scores. On the circle packing problem ($n=32$), \ours{} discovers a solution that exceeds the human best-known result.
+
+Our contributions can be summarized as:
+\begin{itemize}
+    \item A novel \textbf{toxic trait tracking} system for negative selection in LLM-guided program evolution, using dynamic baseline comparison against the current best solution.
+    \item \textbf{Peer-review reward decoupling} that scores research proposals independently of program performance, trained on 24,445 ICLR papers.
+    \item \textbf{Failure-driven learning} that records failure patterns with LLM root cause analysis and uses them to guide future generations.
+    \item An \textbf{automated bug fixer loop} that recovers 60--70\% of programs with syntax or runtime errors through iterative repair.
+    \item A fully \textbf{cloud-based OpenRouter architecture} eliminating the need for local GPU resources for reward model inference.
+    \item Comprehensive evaluation on 8 benchmark problems with ablation studies demonstrating the effectiveness of each component.
+    \item Open-source release of our code, trained reward model, and benchmark results.\footnote{Code and models available at: [URL redacted for review]}
+\end{itemize}
+
+The remainder of this paper is organized as follows: Section~\ref{sec:related_work} surveys related work in LLM-guided program synthesis and evolutionary computation. Section~\ref{sec:method} presents our method in detail. Section~\ref{sec:experiments} describes our experimental setup, and Section~\ref{sec:results} presents results and analysis. Section~\ref{sec:discussion} discusses limitations and future work, and Section~\ref{sec:conclusion} concludes.

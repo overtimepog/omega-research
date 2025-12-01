@@ -1,0 +1,137 @@
+% Omega Evolve: Accelerating Algorithm Discovery through Negative Selection
+% and Peer-Review Reward Modeling
+%
+% Target venues: NeurIPS 2026, ICML 2026, ICLR 2026, GECCO 2026
+% Format: 8-10 pages + references + appendix
+%
+\documentclass{article}
+
+% Fallback to standard formatting to avoid missing neurips_2024.sty
+\usepackage[margin=1in]{geometry}
+\usepackage[numbers]{natbib}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{adjustbox}
+
+% Checkmarks for tables
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+
+% Custom commands
+\newcommand{\ours}{\textsc{Omega Evolve}}
+\newcommand{\toxic}{\textit{toxic}}
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\cf}{\textit{cf.}}
+\newcommand{\etal}{\textit{et al.}}
+
+% Title
+\title{Omega Evolve: Accelerating Algorithm Discovery through \\
+Negative Selection and Peer-Review Reward Modeling}
+
+% Authors (anonymized for submission)
+\author{
+  Anonymous Authors \\
+  Anonymous Institution \\
+  \texttt{anonymous@institution.edu}
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+%==============================================================================
+% ABSTRACT
+%==============================================================================
+\begin{abstract}
+Large language models (LLMs) have emerged as powerful mutation operators for evolutionary program synthesis, enabling systems like FunSearch and AlphaEvolve to discover novel algorithms for open mathematical problems. However, existing approaches suffer from wasted computation on failed exploration paths and lack mechanisms to learn from failures. We present \ours{}, an evolutionary code optimization framework that introduces four key innovations: (1) \textbf{Toxic Trait Tracking}, a negative selection mechanism that excludes underperforming programs from breeding using dynamic baseline comparison against the current best solution rather than the immediate parent; (2) \textbf{Peer-Review Reward Decoupling}, which scores research proposals independently of program performance, enabling early filtering of low-quality ideas; (3) \textbf{Failure-Driven Learning}, which records failure patterns with LLM-generated root cause analysis and injects this history into future proposal prompts; and (4) \textbf{Automated Bug Fixing}, which recovers 60--70\% of programs with syntax or runtime errors through iterative repair. Built on a cloud-based OpenRouter architecture using GPT-5.1-Codex-Mini for code generation and Gemini-2.5-Flash-Lite for reward scoring, \ours{} eliminates the need for local GPU resources. On the AlphaResearchComp benchmark of 8 frontier mathematical problems, \ours{} achieves competitive results while reducing wasted iterations by 13--14 percentage points compared to baselines. We release our code and benchmark results to facilitate reproducible research in LLM-guided algorithm discovery.
+\end{abstract}
+
+%==============================================================================
+% 1. INTRODUCTION
+%==============================================================================
+\section{Introduction}
+\label{sec:introduction}
+\input{sections/introduction}
+
+%==============================================================================
+% 2. RELATED WORK
+%==============================================================================
+\section{Related Work}
+\label{sec:related_work}
+\input{sections/related_work}
+
+%==============================================================================
+% 3. METHOD
+%==============================================================================
+\section{Method}
+\label{sec:method}
+\input{sections/method}
+
+%==============================================================================
+% 4. EXPERIMENTS
+%==============================================================================
+\section{Experiments}
+\label{sec:experiments}
+\input{sections/experiments}
+
+%==============================================================================
+% 5. RESULTS
+%==============================================================================
+\section{Results}
+\label{sec:results}
+\input{sections/results}
+
+%==============================================================================
+% 6. DISCUSSION
+%==============================================================================
+\section{Discussion}
+\label{sec:discussion}
+\input{sections/discussion}
+
+%==============================================================================
+% 7. CONCLUSION
+%==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+\input{sections/conclusion}
+
+%==============================================================================
+% ACKNOWLEDGMENTS
+%==============================================================================
+% \section*{Acknowledgments}
+% Acknowledgments will be added in the camera-ready version.
+
+%==============================================================================
+% REFERENCES
+%==============================================================================
+\bibliographystyle{plainnat}
+\bibliography{references/references}
+
+%==============================================================================
+% APPENDIX
+%==============================================================================
+\newpage
+\appendix
+\input{sections/appendix}
+
+\end{document}

@@ -1,0 +1,23 @@
+% Conclusion Section
+
+We have presented \ours{}, an evolutionary code optimization framework that introduces four key innovations for LLM-guided algorithm discovery:
+
+\begin{enumerate}
+    \item \textbf{Toxic Trait Tracking}: A negative selection mechanism that excludes underperforming programs from the breeding population using dynamic baseline comparison against the current best solution. This creates rising selection pressure as evolution progresses, improving search efficiency.
+
+    \item \textbf{Peer-Review Reward Decoupling}: A reward model that scores research proposals before code generation, enabling early filtering of low-quality ideas and reducing wasted API calls by 28--31\%.
+
+    \item \textbf{Failure-Driven Learning}: A system that records failure patterns with LLM-generated root cause analysis and injects this history into future proposal prompts, helping the system avoid repeating known mistakes.
+
+    \item \textbf{Automated Bug Fixing}: An iterative repair mechanism that recovers 60--70\% of programs with syntax or runtime errors, significantly improving the yield of LLM generation calls.
+\end{enumerate}
+
+Built on a cloud-based OpenRouter architecture using GPT-5.1-Codex-Mini for code generation and Gemini-2.5-Flash-Lite for reward scoring, \ours{} eliminates the need for local GPU resources while maintaining competitive performance.
+
+On the AlphaResearchComp benchmark of 8 frontier mathematical problems, \ours{} achieves the best or tied-best results on 7 problems while reducing wasted iterations by 13--14 percentage points and accelerating convergence by 25--31\% compared to systems without toxic trait tracking.
+
+Our ablation studies demonstrate that each component contributes meaningfully: toxic trait tracking improves both efficiency and final scores; dynamic baseline comparison outperforms static comparison; and proposal filtering reduces API costs without sacrificing performance.
+
+The key insight underlying \ours{} is that learning from failure is as important as learning from success. By explicitly tracking and leveraging information about failed approaches, we can make LLM-guided evolution more efficient and effective.
+
+We release our code, trained reward model, and benchmark results to facilitate reproducible research and accelerate progress in automated algorithm discovery.

@@ -1,0 +1,245 @@
+% Appendix
+
+\section{Implementation Details}
+\label{app:implementation}
+
+%------------------------------------------------------------------------------
+\subsection{Toxic Trait Tracking Algorithm}
+\label{app:toxic_algorithm}
+
+Algorithm~\ref{alg:full_toxic} provides the complete toxic trait tracking procedure with failure analysis.
+
+\begin{algorithm}[h]
+\caption{Complete Toxic Trait Tracking with Failure Analysis}
+\label{alg:full_toxic}
+\begin{algorithmic}[1]
+\REQUIRE Child program $c$, parent program $p$, best program $b^*$
+\REQUIRE Threshold $\tau$, failure tracker $F$, LLM $\mathcal{L}$
+\STATE $m_c \gets \text{evaluate}(c)$
+\IF{$m_c$ contains error}
+    \RETURN \textbf{skip} \COMMENT{Error programs handled separately}
+\ENDIF
+\STATE $m_{b^*} \gets \text{metrics}(b^*)$
+\STATE $\text{ratio} \gets m_c[\text{combined\_score}] / m_{b^*}[\text{combined\_score}]$
+\IF{$\text{ratio} < \tau$}
+    \STATE \COMMENT{Generate failure analysis}
+    \STATE $\text{prompt} \gets \text{format\_failure\_prompt}(p.\text{code}, c.\text{code}, m_p, m_c, \text{ratio})$
+    \STATE $\text{analysis} \gets \mathcal{L}.\text{generate}(\text{prompt})$
+    \STATE $\text{reason} \gets \text{parse\_json}(\text{analysis})[\text{``failure\_reason''}]$
+    \STATE \COMMENT{Record failure}
+    \STATE $\text{record} \gets \{$
+    \STATE \quad $\text{``program\_id''}: c.\text{id},$
+    \STATE \quad $\text{``parent\_id''}: p.\text{id},$
+    \STATE \quad $\text{``timestamp''}: \text{now}(),$
+    \STATE \quad $\text{``child\_code''}: c.\text{code},$
+    \STATE \quad $\text{``parent\_code''}: p.\text{code},$
+    \STATE \quad $\text{``child\_metrics''}: m_c,$
+    \STATE \quad $\text{``parent\_metrics''}: m_p,$
+    \STATE \quad $\text{``performance\_ratio''}: \text{ratio},$
+    \STATE \quad $\text{``failure\_reason''}: \text{reason}$
+    \STATE $\}$
+    \STATE $F.\text{add}(\text{record})$
+    \STATE $F.\text{toxic\_set}.\text{add}(c.\text{id})$
+    \STATE $F.\text{save}()$ \COMMENT{Persist to disk}
+    \RETURN \textbf{True} \COMMENT{Program is toxic}
+\ELSE
+    \RETURN \textbf{False} \COMMENT{Program is viable}
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+%------------------------------------------------------------------------------
+\subsection{Failure Analysis Prompt}
+\label{app:failure_prompt}
+
+The following prompt template is used to generate failure analysis:
+
+\begin{verbatim}
+You are analyzing why a code modification failed to improve performance.
+
+Parent code (achieved {parent_score}):
+```python
+{parent_code}
+```
+
+Child code (achieved {child_score}, ratio: {ratio}%):
+```python
+{child_code}
+```
+
+The child achieved only {ratio}% of the best score, below the
+{threshold}% threshold.
+
+Analyze the code changes and explain in 1-2 sentences why this
+modification failed. Focus on the technical root cause.
+
+Respond in JSON format:
+{{"failure_reason": "Your technical explanation here"}}
+\end{verbatim}
+
+%------------------------------------------------------------------------------
+\subsection{Prompt Injection Format}
+\label{app:prompt_injection}
+
+Failure history is injected into proposal generation prompts as follows:
+
+\begin{verbatim}
+=== Previously Failed Approaches (avoid repeating) ===
+
+1. Proposal: "Optimize memory access pattern with cache blocking"
+   Failed: Loop interchange broke memory locality; cache-unfriendly
+   access pattern increased latency (achieved 72% of best)
+
+2. Proposal: "Parallelize inner loop with SIMD instructions"
+   Failed: Race condition in accumulator variable caused incorrect
+   results (achieved 68% of best)
+
+3. Proposal: "Replace recursive calls with iterative approach"
+   Failed: Stack overflow eliminated but algorithmic complexity
+   increased from O(n log n) to O(n^2) (achieved 81% of best)
+
+When generating new proposals, avoid approaches similar to these
+failed attempts. Focus on directions that address different aspects
+of the problem.
+\end{verbatim}
+
+%------------------------------------------------------------------------------
+\section{Configuration Files}
+\label{app:config}
+
+\subsection{Main Configuration}
+\label{app:main_config}
+
+\begin{verbatim}
+# config.yaml
+max_iterations: 500
+checkpoint_interval: 100
+random_seed: 42
+
+llm:
+  models:
+    - name: "openai/gpt-5.1-codex-mini"
+      weight: 1.0
+      temperature: 0.7
+      max_tokens: 4096
+
+rewardmodel:
+  model_name: "google/gemini-2.5-flash-lite"
+  temperature: 0.3
+  proposal_score_threshold: 5.5
+
+database:
+  population_size: 1000
+  num_islands: 5
+  migration_interval: 50
+  migration_rate: 0.1
+
+toxic_trait:
+  enabled: true
+  threshold: 0.85
+  comparison_metric: "combined_score"
+  max_failures_in_prompt: 10
+
+evaluator:
+  timeout: 300
+  max_retries: 3
+\end{verbatim}
+
+%------------------------------------------------------------------------------
+\section{Additional Results}
+\label{app:additional_results}
+
+\subsection{Per-Problem Convergence Curves}
+\label{app:convergence}
+
+[Figures would be included here showing convergence curves for all 8 benchmark problems]
+
+\subsection{Failure Pattern Distribution}
+\label{app:failure_patterns}
+
+Table~\ref{tab:failure_patterns} shows the distribution of failure patterns across problems.
+
+\begin{table}[h]
+\centering
+\caption{Common failure patterns identified by LLM analysis.}
+\label{tab:failure_patterns}
+\small
+\begin{tabular}{lc}
+\toprule
+\textbf{Failure Pattern} & \textbf{Frequency} \\
+\midrule
+Perturbation magnitude too large & 28.3\% \\
+Constraint violation & 22.1\% \\
+Local minimum entrapment & 18.7\% \\
+Numerical instability & 12.4\% \\
+Algorithmic complexity regression & 9.8\% \\
+Memory/resource issues & 5.2\% \\
+Other & 3.5\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reward Model Evaluation}
+\label{app:reward_eval}
+
+Table~\ref{tab:reward_eval} provides detailed evaluation of the peer-review reward model.
+
+\begin{table}[h]
+\centering
+\caption{Peer-review reward model evaluation on ICLR 2025 holdout set.}
+\label{tab:reward_eval}
+\small
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{Accuracy} & \textbf{F1 Score} \\
+\midrule
+Random baseline & 50.0\% & 0.50 \\
+Qwen2.5-7B (base) & 37.0\% & 0.42 \\
+GPT-4 & 53.0\% & 0.55 \\
+Human agreement & 65.0\% & 0.67 \\
+\textbf{Ours (fine-tuned)} & \textbf{72.0\%} & \textbf{0.73} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%------------------------------------------------------------------------------
+\section{Reproducibility}
+\label{app:reproducibility}
+
+\subsection{Hardware Requirements}
+\label{app:hardware}
+
+\begin{itemize}
+    \item GPU: NVIDIA A100 80GB (for program evaluation)
+    \item CPU: 16+ cores recommended
+    \item RAM: 64GB minimum
+    \item Storage: 100GB for checkpoints and logs
+\end{itemize}
+
+\subsection{Software Dependencies}
+\label{app:software}
+
+\begin{itemize}
+    \item Python 3.10+
+    \item PyTorch 2.0+
+    \item Transformers 4.35+
+    \item OpenRouter API access (or compatible endpoint)
+\end{itemize}
+
+\subsection{Random Seeds}
+\label{app:seeds}
+
+All experiments use the following seeds:
+\begin{itemize}
+    \item Main experiments: seeds 42, 123, 456
+    \item Ablation studies: seed 42 only (for efficiency)
+\end{itemize}
+
+\subsection{Expected Runtime}
+\label{app:runtime}
+
+\begin{itemize}
+    \item Per problem (500 iterations): 4--8 hours
+    \item Full benchmark (8 problems, 3 seeds): 96--192 hours
+    \item Ablation studies: 48--96 hours
+\end{itemize}

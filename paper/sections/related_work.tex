@@ -1,0 +1,83 @@
+% Related Work Section
+
+Our work builds on several threads of research: LLM-guided program synthesis, reward modeling for code, and quality-diversity algorithms in evolutionary computation. Importantly, \ours{} extends the AlphaResearch system~\cite{alpharesearch} with novel negative selection mechanisms while preserving its core peer-review reward architecture.
+
+%------------------------------------------------------------------------------
+\subsection{LLM-Guided Program Synthesis}
+\label{sec:rw_llm_synthesis}
+
+The use of LLMs for program synthesis has evolved rapidly. Early work focused on single-shot code generation from natural language specifications~\cite{codex,alphacode}. More recently, researchers have explored using LLMs as \emph{mutation operators} within evolutionary frameworks, enabling iterative refinement toward complex objectives.
+
+\paragraph{FunSearch.} Romera-Paredes \etal~\cite{funsearch} introduced FunSearch, which combines an LLM with evolutionary search to discover solutions to open mathematical problems. FunSearch maintains a population of programs and uses the LLM to propose modifications based on successful examples. The system achieved state-of-the-art results on the cap set problem and online bin packing. However, FunSearch is limited to small Python functions (10--20 lines) and requires millions of LLM samples per problem.
+
+\paragraph{AlphaEvolve.} Google DeepMind's AlphaEvolve~\cite{alphaevolve} significantly extends FunSearch's capabilities. It handles entire programs with hundreds of lines across multiple files and programming languages, supports evaluations running for hours on accelerators, and employs multi-objective optimization. AlphaEvolve achieved improvements on 13 mathematical problems and discovered optimizations for Google's data center scheduling and TPU hardware. However, AlphaEvolve remains closed-source and lacks mechanisms for learning from failures.
+
+\paragraph{OpenEvolve.} OpenEvolve~\cite{openevolve} provides an open-source alternative to AlphaEvolve, implementing similar evolutionary mechanisms with support for any OpenAI-compatible API. It introduces MAP-Elites for quality-diversity and island-based evolution for maintaining population diversity. \ours{} builds on OpenEvolve's architecture, adding toxic trait tracking and peer-review reward modeling.
+
+\paragraph{ShinkaEvolve.} Sakana AI's ShinkaEvolve~\cite{shinkaevolve} focuses on \emph{sample efficiency}, achieving state-of-the-art results with only hundreds of evaluations instead of thousands. Key innovations include adaptive parent sampling, novelty-based rejection using embeddings, and bandit-based LLM ensemble selection. While ShinkaEvolve's novelty rejection prevents duplicate evaluations, it does not implement the dynamic baseline comparison or failure analysis that characterizes our toxic trait system.
+
+\paragraph{AlphaResearch.} Yu \etal~\cite{alpharesearch} introduced a peer-review reward model to guide proposal generation, creating a dual-environment system that balances feasibility (through execution) and innovation (through simulated peer review). AlphaResearch achieves superhuman performance on 2 of 8 benchmark problems. Our work extends AlphaResearch with toxic trait tracking, which AlphaResearch lacks.
+
+Table~\ref{tab:comparison} summarizes the key differences between these systems and \ours{}.
+
+\begin{table}[t]
+\centering
+\caption{Comparison of LLM-guided program evolution systems. \ours{} extends AlphaResearch with toxic trait tracking, failure-driven learning, automated bug fixing, and OpenRouter-based architecture.}
+\label{tab:comparison}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Feature} & \textbf{FunSearch} & \textbf{AlphaEvolve} & \textbf{OpenEvolve} & \textbf{ShinkaEvolve} & \textbf{AlphaRes.} & \textbf{Ours} \\
+\midrule
+Open-source & \xmark & \xmark & \cmark & \cmark & \cmark & \cmark \\
+Multi-file programs & \xmark & \cmark & \cmark & \cmark & \cmark & \cmark \\
+MAP-Elites & \xmark & \cmark & \cmark & \cmark & \cmark & \cmark \\
+Island evolution & \xmark & \cmark & \cmark & \cmark & \cmark & \cmark \\
+Peer-review rewards & \xmark & \xmark & \xmark & \xmark & \cmark & \cmark \\
+Proposal filtering & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+Toxic trait tracking & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+Dynamic baseline & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+Failure analysis & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+Auto bug fixing & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+Novelty rejection & \xmark & \xmark & \xmark & \cmark & \xmark & \xmark \\
+Cloud API (OpenRouter) & \xmark & \xmark & \xmark & \xmark & \xmark & \cmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%------------------------------------------------------------------------------
+\subsection{Reward Modeling for Code}
+\label{sec:rw_reward}
+
+Reward modeling has emerged as a critical component in LLM-based systems, guiding generation toward desired properties.
+
+\paragraph{Process Reward Models.} CodePRM~\cite{codeprm} introduces process reward models that leverage code execution feedback to score reasoning steps rather than just final outcomes. This enables identification of errors early in the generation process. Our peer-review reward model operates at a different level---evaluating research \emph{proposals} before any code is generated, enabling even earlier filtering.
+
+\paragraph{Learned Verifiers.} $\mu$CODE~\cite{mucode} addresses multi-turn code generation by training verifiers to score intermediate code states. The key insight is that code generation is a ``one-step recoverable MDP,'' allowing simplification of the RL problem to imitation learning. While $\mu$CODE focuses on code correctness, our reward model evaluates research quality---a distinct signal.
+
+\paragraph{Mitigating Reward Hacking.} P-GRPO~\cite{pgrpo} addresses reward hacking in code generation by conditioning process rewards on task success. This prevents models from gaming reward metrics without improving actual code quality. Our peer-review reward model is less susceptible to hacking because it evaluates natural language proposals rather than code, and the training signal comes from real human reviewers rather than automated metrics.
+
+%------------------------------------------------------------------------------
+\subsection{Quality-Diversity Algorithms}
+\label{sec:rw_qd}
+
+Quality-diversity (QD) algorithms aim to discover a diverse collection of high-performing solutions rather than a single optimum.
+
+\paragraph{MAP-Elites.} Mouret and Clune~\cite{mapelites} introduced MAP-Elites, which maintains a grid of elite solutions across behavioral feature dimensions. This approach has been successfully applied to genetic programming~\cite{mapelites_gp}, revealing that diverse program architectures can solve the same problem. \ours{} employs MAP-Elites with a feature map based on score and code complexity.
+
+\paragraph{Negative Selection.} In artificial immune systems, negative selection algorithms identify anomalies by detecting patterns that deviate from ``self''~\cite{negative_selection}. While this has been applied to anomaly detection, to our knowledge \ours{} is the first to apply negative selection principles to LLM-guided program evolution, explicitly marking and excluding underperforming programs.
+
+%------------------------------------------------------------------------------
+\subsection{Positioning of Our Work}
+
+\ours{} makes three novel contributions relative to prior work:
+
+\begin{enumerate}
+    \item \textbf{Toxic trait tracking with dynamic baseline}: Unlike ShinkaEvolve's novelty rejection (which prevents duplicates) or traditional fitness-based selection (which compares against parents), we compare against the \emph{current best} solution, creating rising selection pressure.
+
+    \item \textbf{Peer-review reward decoupling}: Unlike AlphaResearch, which uses peer-review rewards during proposal generation, we use them for \emph{early filtering}---rejecting low-quality proposals before expensive code generation.
+
+    \item \textbf{Failure-driven learning}: No prior system records failure patterns with root cause analysis and uses this history to guide future generations.
+\end{enumerate}
+
+These innovations address the fundamental inefficiency of ``exploration amnesia'' in current LLM-guided evolution systems.

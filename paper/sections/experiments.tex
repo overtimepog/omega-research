@@ -1,0 +1,122 @@
+% Experiments Section
+
+We evaluate \ours{} on the AlphaResearchComp benchmark and conduct ablation studies to understand the contribution of each component.
+
+%------------------------------------------------------------------------------
+\subsection{Benchmark: AlphaResearchComp}
+\label{sec:benchmark}
+
+We use the AlphaResearchComp benchmark~\cite{alpharesearch}, a suite of 8 frontier mathematical problems with executable evaluation pipelines. Table~\ref{tab:benchmark} summarizes the problems.
+
+\begin{table}[t]
+\centering
+\caption{AlphaResearchComp benchmark problems. Higher $\uparrow$ or Lower $\downarrow$ indicates the optimization direction.}
+\label{tab:benchmark}
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Problem} & \textbf{Domain} & \textbf{Human Best} & \textbf{Direction} \\
+\midrule
+Packing circles ($n=26$) & Geometry & 2.634 & $\uparrow$ \\
+Packing circles ($n=32$) & Geometry & 2.936 & $\uparrow$ \\
+Max-min distance ratio ($n=16$) & Geometry & 12.89 & $\downarrow$ \\
+Third autocorrelation & Harmonic Analysis & 1.458 & $\downarrow$ \\
+Spherical code ($d=3$, $n=30$) & Geometry & 0.6736 & $\uparrow$ \\
+Autoconvolution peak & Signal Processing & 0.755 & $\downarrow$ \\
+Littlewood polynomials ($n=512$) & Harmonic Analysis & 32 & $\uparrow$ \\
+MSTD ($n=30$) & Combinatorics & 1.04 & $\uparrow$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Evaluation Metrics.} We report two metrics:
+\begin{itemize}
+    \item \textbf{Best Score}: The best metric value achieved during evolution.
+    \item \textbf{Excel@best}: Percentage excess over human best, computed as $\frac{\text{score} - \text{human}}{\text{human}} \times 100\%$ for maximization problems (negated for minimization).
+\end{itemize}
+
+%------------------------------------------------------------------------------
+\subsection{Experimental Setup}
+\label{sec:setup}
+
+\paragraph{Hardware.} All experiments were conducted on a single NVIDIA A100 80GB GPU for program evaluation, with LLM inference via OpenRouter API.
+
+\paragraph{LLM Configuration.} We use GPT-5.1-Codex-Mini as the primary LLM for proposal generation, code mutation, and bug fixing, accessed via OpenRouter. Temperature is set to 0.7 for diversity, with maximum output length of 4096 tokens. This model is specifically optimized for code generation tasks and excels at diff-based mutations.
+
+\paragraph{Reward Model.} For proposal scoring, we use Gemini-2.5-Flash-Lite via OpenRouter. This model provides fast, cost-effective inference suitable for high-volume scoring operations. We use temperature 0.3 for consistent scoring. Unlike the original AlphaResearch which uses a locally-hosted fine-tuned Qwen2.5-7B model, our OpenRouter-based approach eliminates the need for dedicated GPU resources for reward model inference.
+
+\paragraph{Evolution Parameters.} Table~\ref{tab:hyperparams} lists the key hyperparameters.
+
+\begin{table}[t]
+\centering
+\caption{Hyperparameters for \ours{}.}
+\label{tab:hyperparams}
+\small
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Maximum iterations & 500 \\
+Population size (per island) & 200 \\
+Number of islands & 5 \\
+Migration interval & 50 iterations \\
+Migration rate & 10\% \\
+MAP-Elites grid size & $10 \times 10$ \\
+Proposal score threshold ($\tau_{\text{proposal}}$) & 5.5 \\
+Toxic threshold ($\tau_{\text{toxic}}$) & 0.85 \\
+Failure history size & 10 \\
+Inspiration programs & 5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Baselines.} We compare against:
+\begin{itemize}
+    \item \textbf{OpenEvolve}~\cite{openevolve}: Open-source evolutionary framework without reward model or toxic tracking.
+    \item \textbf{ShinkaEvolve}~\cite{shinkaevolve}: Sample-efficient evolution with novelty rejection.
+    \item \textbf{AlphaResearch}~\cite{alpharesearch}: Peer-review reward model without toxic tracking.
+\end{itemize}
+
+For fair comparison, all systems use the same evaluation budget (500 iterations) and random seeds. Note that our system uses GPT-5.1-Codex-Mini via OpenRouter, while we configure baselines to use comparable frontier models.
+
+%------------------------------------------------------------------------------
+\subsection{Ablation Studies}
+\label{sec:ablations}
+
+We conduct ablations to isolate the contribution of each component:
+
+\paragraph{Ablation 1: Toxic Trait Tracking.}
+\begin{itemize}
+    \item \textbf{Condition A}: Toxic tracking enabled ($\tau_{\text{toxic}} = 0.85$)
+    \item \textbf{Condition B}: Toxic tracking disabled (all programs added to population)
+\end{itemize}
+
+\paragraph{Ablation 2: Threshold Sensitivity.}
+We vary $\tau_{\text{toxic}} \in \{0.70, 0.80, 0.85, 0.90, 0.95\}$ to understand the exploration-exploitation trade-off.
+
+\paragraph{Ablation 3: Baseline Comparison Type.}
+\begin{itemize}
+    \item \textbf{Condition A}: Compare against current BEST (dynamic baseline)
+    \item \textbf{Condition B}: Compare against PARENT (static baseline)
+\end{itemize}
+
+\paragraph{Ablation 4: Proposal Filtering.}
+\begin{itemize}
+    \item \textbf{Condition A}: Filter proposals with score $< 5.5$
+    \item \textbf{Condition B}: No filtering (generate code for all proposals)
+\end{itemize}
+
+For ablations, we focus on three representative problems: Packing circles ($n=32$), MSTD ($n=30$), and Third autocorrelation. Each condition is run with 3 random seeds.
+
+%------------------------------------------------------------------------------
+\subsection{Compute Efficiency Metrics}
+\label{sec:efficiency}
+
+Beyond final scores, we measure compute efficiency:
+\begin{itemize}
+    \item \textbf{Iterations to 95\%}: Number of iterations to reach 95\% of the final best score.
+    \item \textbf{Wasted iterations}: Percentage of iterations where the generated program was marked toxic or rejected.
+    \item \textbf{LLM calls per point}: Number of LLM API calls (proposal + code generation) per 0.1\% improvement in score.
+\end{itemize}
+
+These metrics capture whether toxic trait tracking actually improves search efficiency, not just final outcomes.
